@@ -27,4 +27,5 @@ public interface URLQueueInterface extends Remote {
      * @throws RemoteException Se ocorrer um erro de comunicação remota.
      */
     boolean isEmpty() throws RemoteException;
+
 }

@@ -2,10 +2,9 @@ package search;
 
 import java.rmi.registry.*;
 import java.text.Normalizer;
-import java.util.*;
+import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 import org.jsoup.*;
 import org.jsoup.nodes.*;
 import org.jsoup.select.*;
@@ -14,27 +13,54 @@ public class Downloader {
     private static IndexStorageBarrelInterface indexStorageBarrelInterface;
     private static URLQueueInterface urlQueueInterface;
 
+    // Número máximo de threads a usar para o processamento paralelo:
+    private static final int NUM_THREADS = 5;
+    private static ExecutorService executor;
 
     public static void main(String[] args) {
         try {
-
             // Conectar ao servidor (IndexStorageBarrel) RMI
             Registry registry = LocateRegistry.getRegistry(8183);
             indexStorageBarrelInterface = (IndexStorageBarrelInterface) registry.lookup("index");
 
-            // Conectar ao servidor da Queue (URÇQueue) RMI:
+            // Conectar ao servidor da Queue (URLQueue) RMI:
             Registry registryQueue = LocateRegistry.getRegistry(8184);
             urlQueueInterface = (URLQueueInterface) registryQueue.lookup("URLQueueService");
 
+            // Criar um executor com um número fixo de threads
+            executor = Executors.newFixedThreadPool(NUM_THREADS);
 
-            while (true) {
-                String url = urlQueueInterface.takeUrl();
-                if (url == null) break; // Evita ficar num loop infinito
+            // Criar uma fila bloqueante para distribuir tarefas às threads
+            BlockingQueue<String> urlQueue = new LinkedBlockingQueue<>();
 
-                // Apenas processa URLs que ainda não foram indexados
-                if (!indexStorageBarrelInterface.isUrlIndexed(url)) {
-                    processUrl(url);
+            // Iniciar um thread separado para buscar URLs constantemente
+            new Thread(() -> {
+                try {
+                    while (true) {
+                        String url = urlQueueInterface.takeUrl();
+                        if (url != null && !indexStorageBarrelInterface.isUrlIndexed(url)) {
+                            urlQueue.put(url); // Adicionar URL à fila bloqueante
+                        } else {
+                            Thread.sleep(1000); // Esperar antes de verificar novamente
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
+            }).start();
+
+            // Criar workers que ficam constantemente a processar URLs da fila
+            for (int i = 0; i < NUM_THREADS; i++) {
+                executor.execute(() -> {
+                    while (true) {
+                        try {
+                            String url = urlQueue.take(); // Espera até haver um URL disponível
+                            processUrl(url);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+                });
             }
 
         } catch (Exception e) {
@@ -42,68 +68,26 @@ public class Downloader {
         }
     }
 
-
-
-
-
-    // Função para dividir palavras ligadas por pontuação
-    private static String[] splitByPunctuation(String input) {
-        return input.split("[\\p{Punct}&&[^-]]+"); // Mantém hífen, mas divide por outros sinais
-    }
-
-    // Remover apenas caracteres especiais, mantendo acentos
-    private static String cleanWord(String input) {
-        return input.replaceAll("[^\\p{L}-]", ""); // Mantém letras com acentos e hífen
-    }
-
-    // Remover os acentos
-    private static String normalizeText(String inputWord) {
-        return Normalizer.normalize(inputWord, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
-    }
-
-    // Verificar se a palavra contém pelo menos uma letra
-    private static boolean containsLetter(String word) {
-        return word.matches(".*[a-zA-Záéíóúâêîôûãõç].*"); // Retorna verdadeiro se houver pelo menos uma letra
-    }
-
-    // Função para verificar se uma palavra é um Link
-    private static boolean isLink(String input) {
-        String regex = "^(http|https|www)\\S+";
-        Pattern pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
-        Matcher matcher = pattern.matcher(input);
-        return matcher.find();
-    }
-
     private static void processUrl(String url) {
         try {
-
-            System.out.println("Processando o url: " + url);
+            System.out.println("Processando o URL: " + url);
             Document doc = Jsoup.connect(url).get();
 
             // Remover elementos desnecessários (scripts, estilos, menus)
             doc.select("script, style, nav, footer, header, aside").remove();
-            // Extrair o texto e dividir em palavras
             String text = doc.body().text();
 
-
-            for (String word: text.split("\\s+")) {
+            for (String word : text.split("\\s+")) {
                 if (word.isEmpty() || isLink(word)) continue;
 
-                String[] splitWords = splitByPunctuation(word); // Dividir palavras ligadas por pontuação (penalties/penalties)
+                String cleanedWord = normalizeText(cleanWord(word.toLowerCase()));
 
-                for (String part : splitWords) {
-                    part = cleanWord(part);  // Remover caracteres especiais mantendo os acentos
-                    part = normalizeText(part); // Remover os acentos
-                    part = part.toLowerCase(); // Converter para minúsculas
-
-                    if (part.isEmpty() || !containsLetter(part)) continue;
-                    indexStorageBarrelInterface.addToIndex(part, url);
+                if (containsLetter(cleanedWord)) {
+                    indexStorageBarrelInterface.addToIndex(cleanedWord, url);
                 }
             }
 
             processLinks(doc, url);
-
-
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -122,5 +106,24 @@ public class Downloader {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private static boolean isLink(String input) {
+        String regex = "^(http|https|www)\\S+";
+        Pattern pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
+        Matcher matcher = pattern.matcher(input);
+        return matcher.find();
+    }
+
+    private static String cleanWord(String input) {
+        return input.replaceAll("[^\\p{L}-]", "");
+    }
+
+    private static String normalizeText(String inputWord) {
+        return Normalizer.normalize(inputWord, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
+    }
+
+    private static boolean containsLetter(String word) {
+        return word.matches(".*[a-zA-Záéíóúâêîôûãõç].*");
     }
 }

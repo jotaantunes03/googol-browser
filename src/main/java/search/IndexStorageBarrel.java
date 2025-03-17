@@ -69,7 +69,6 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
             // Criar tabelas se não existirem
             try (Statement stmt = connection.createStatement()) {
-                stmt.execute("PRAGMA journal_mode=WAL;");
 
                 stmt.execute("CREATE TABLE IF NOT EXISTS index_data (" +
                         "word TEXT PRIMARY KEY, " +
@@ -93,48 +92,39 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
     //----------------------------------------METHODS----------------------------------------
     @Override
-    public void addToIndex(String word, String url) throws RemoteException {
+    public synchronized void addToIndex(String word, String url) throws RemoteException {
         try {
-            connection.setAutoCommit(false);  // Iniciar transação
+            // Iniciar transação apenas se necessário
+            connection.setAutoCommit(false);
 
-            String existingUrls = null;
+            // Atualiza a palavra diretamente ou insere se não existir
+            try (PreparedStatement stmt = connection.prepareStatement(
+                    "INSERT INTO index_data (word, urls) " +
+                            "VALUES (?, ?) " +
+                            "ON CONFLICT(word) DO UPDATE SET urls = index_data.urls || ';' || excluded.urls")) {
 
-            // Verificar se a palavra já está na base de dados
-            try (PreparedStatement stmt = connection.prepareStatement("SELECT urls FROM index_data WHERE word = ?")) {
                 stmt.setString(1, word);
-                ResultSet rs = stmt.executeQuery();
-                if (rs.next()) {
-                    existingUrls = rs.getString("urls");
-                }
+                stmt.setString(2, url);
+                stmt.executeUpdate();
             }
 
-            // Atualizar ou inserir a palavra com os URLs associados
-            if (existingUrls != null) {
-                if (!existingUrls.contains(url)) {
-                    existingUrls += ";" + url;
-                    try (PreparedStatement updateStmt = connection.prepareStatement("UPDATE index_data SET urls = ? WHERE word = ?")) {
-                        updateStmt.setString(1, existingUrls);
-                        updateStmt.setString(2, word);
-                        updateStmt.executeUpdate();
-                    }
-                }
-            } else {
-                try (PreparedStatement insertStmt = connection.prepareStatement("INSERT INTO index_data (word, urls) VALUES (?, ?)")) {
-                    insertStmt.setString(1, word);
-                    insertStmt.setString(2, url);
-                    insertStmt.executeUpdate();
-                }
-            }
-            connection.commit();  // Confirmar a transação
+            // Confirmar transação
+            connection.commit();
+            connection.setAutoCommit(true);
 
         } catch (SQLException e) {
+            try {
+                connection.rollback(); // Se houver erro, reverter a transação
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
             e.printStackTrace();
         }
     }
 
 
     @Override
-    public List<String> searchWord(String word) throws RemoteException {
+    public synchronized List<String> searchWord(String word) throws RemoteException {
         List<String> results = new ArrayList<>();
         try (PreparedStatement stmt = connection.prepareStatement("SELECT urls FROM index_data WHERE word = ?")) {
             stmt.setString(1, word);
@@ -151,7 +141,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
 
     @Override
-    public void addLink(String sourceUrl, String linkedUrl) throws RemoteException {
+    public synchronized void addLink(String sourceUrl, String linkedUrl) throws RemoteException {
         try (PreparedStatement stmt = connection.prepareStatement("INSERT OR IGNORE INTO links_graph (source_url, linked_url) VALUES (?, ?)")) {
             stmt.setString(1, sourceUrl);
             stmt.setString(2, linkedUrl);
@@ -162,7 +152,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     }
 
     @Override
-    public boolean isUrlIndexed(String url) throws RemoteException {
+    public synchronized boolean isUrlIndexed(String url) throws RemoteException {
         try (PreparedStatement stmt = connection.prepareStatement("SELECT 1 FROM index_data WHERE urls LIKE ? LIMIT 1")) {
             stmt.setString(1, "%" + url + "%");
             ResultSet rs = stmt.executeQuery();
