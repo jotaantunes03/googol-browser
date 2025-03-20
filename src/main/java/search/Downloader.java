@@ -10,32 +10,22 @@ import org.jsoup.*;
 import org.jsoup.nodes.*;
 import org.jsoup.select.*;
 
-public class Downloader {
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class Downloader implements Runnable{
     private static IndexStorageBarrelInterface indexStorageBarrelInterface;
     private static URLQueueInterface urlQueueInterface;
 
-
-    public static void main(String[] args) {
+    public Downloader() {
         try {
-
             // Conectar ao servidor (IndexStorageBarrel) RMI
             Registry registry = LocateRegistry.getRegistry(8183);
             indexStorageBarrelInterface = (IndexStorageBarrelInterface) registry.lookup("index");
 
-            // Conectar ao servidor da Queue (URÇQueue) RMI:
+            // Conectar ao servidor da Queue (URLQueue) RMI
             Registry registryQueue = LocateRegistry.getRegistry(8184);
             urlQueueInterface = (URLQueueInterface) registryQueue.lookup("URLQueueService");
-
-
-            while (true) {
-                String url = urlQueueInterface.takeUrl();
-                if (url == null) break; // Evita ficar num loop infinito
-
-                // Apenas processa URLs que ainda não foram indexados
-                if (!indexStorageBarrelInterface.isUrlIndexed(url)) {
-                    processUrl(url);
-                }
-            }
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -43,6 +33,25 @@ public class Downloader {
     }
 
 
+
+    public void run() {
+        try {
+            while (true) {
+                String url = urlQueueInterface.takeUrl();  // Buscar uma URL da fila
+                if (url == null) break; // Evita ficar num loop infinito
+
+                System.out.println("Thread " + Thread.currentThread().getName() + " está processando: " + url);
+
+                // Processa a URL, indexando-a
+                if (!indexStorageBarrelInterface.isUrlIndexed(url)) {
+                    System.out.println("Processando o url: " + url);
+                    processUrl(url);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
 
 
@@ -77,7 +86,7 @@ public class Downloader {
     private static void processUrl(String url) {
         try {
 
-            System.out.println("Processando o url: " + url);
+            // System.out.println("Processando o url: " + url);
             Document doc = Jsoup.connect(url).get();
 
             // Remover elementos desnecessários (scripts, estilos, menus)
@@ -100,7 +109,7 @@ public class Downloader {
                     indexStorageBarrelInterface.addToIndex(part, url);
                 }
             }
-
+            // Processar links dentro do documento
             processLinks(doc, url);
 
 
@@ -122,5 +131,25 @@ public class Downloader {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+
+
+
+
+
+
+
+
+    public static void main(String[] args) {
+        // Definir um pool de threads para downloaders
+        int numThreads = 5;  // Número de threads a serem executadas simultaneamente (configurável)
+        ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
+
+        for (int i = 0; i < numThreads; i++) {
+            executorService.submit(new Downloader());
+        }
+
+        executorService.shutdown();
     }
 }

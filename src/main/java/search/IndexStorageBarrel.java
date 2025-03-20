@@ -93,7 +93,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
     //----------------------------------------METHODS----------------------------------------
     @Override
-    public void addToIndex(String word, String url) throws RemoteException {
+    public synchronized void addToIndex(String word, String url) throws RemoteException {
         try {
             connection.setAutoCommit(false);  // Iniciar transação
 
@@ -160,6 +160,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             e.printStackTrace();
         }
     }
+
 
     @Override
     public boolean isUrlIndexed(String url) throws RemoteException {
