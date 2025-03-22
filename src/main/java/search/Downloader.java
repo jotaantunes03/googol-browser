@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import org.jsoup.*;
 import org.jsoup.nodes.*;
 import org.jsoup.select.*;
+import search.Sockets.ReliableMulticast;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -17,11 +18,13 @@ public class Downloader implements Runnable{
     private static IndexStorageBarrelInterface indexStorageBarrelInterface;
     private static URLQueueInterface urlQueueInterface;
 
+    private static final String GROUP_ADDRESS = "230.0.0.0"; // Endereço Multicast
+    private static final int PORT = 4446; // Porta Multicast
+    private static ReliableMulticast multicast;
+
     public Downloader() {
         try {
-            // Conectar ao servidor (IndexStorageBarrel) RMI
-            Registry registry = LocateRegistry.getRegistry(8183);
-            indexStorageBarrelInterface = (IndexStorageBarrelInterface) registry.lookup("index");
+            multicast = new ReliableMulticast(GROUP_ADDRESS, PORT);
 
             // Conectar ao servidor da Queue (URLQueue) RMI
             Registry registryQueue = LocateRegistry.getRegistry(8184);
@@ -42,11 +45,16 @@ public class Downloader implements Runnable{
 
                 System.out.println("Thread " + Thread.currentThread().getName() + " está processando: " + url);
 
+                /*
                 // Processa a URL, indexando-a
                 if (!indexStorageBarrelInterface.isUrlIndexed(url)) {
                     System.out.println("Processando o url: " + url);
                     processUrl(url);
                 }
+
+                */
+                processUrl(url);
+
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -106,7 +114,10 @@ public class Downloader implements Runnable{
                     part = part.toLowerCase(); // Converter para minúsculas
 
                     if (part.isEmpty() || !containsLetter(part)) continue;
-                    indexStorageBarrelInterface.addToIndex(part, url);
+
+                    // Enviar palavra e URL via multicast
+                    String message = part + ":" + url;
+                    multicast.sendMessage(message);
                 }
             }
             // Processar links dentro do documento
@@ -125,7 +136,9 @@ public class Downloader implements Runnable{
                 String absUrl = link.attr("abs:href");
                 if (!absUrl.isEmpty()) {
                     urlQueueInterface.addUrl(absUrl);
-                    indexStorageBarrelInterface.addLink(sourceUrl, absUrl);
+                    // Enviar ligação dos links via multicast
+                    String message = "addLink" + ":" + sourceUrl + ":" + absUrl;
+                    multicast.sendMessage(message);
                 }
             }
         } catch (Exception e) {

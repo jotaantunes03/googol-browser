@@ -10,13 +10,16 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     //----------------------------------------ATTRIBUTES----------------------------------------
 
     /** Lista de Storage Barrels ativos */
-    private List<IndexStorageBarrelInterface> barrels;
+    private Map<IndexStorageBarrelInterface, Integer> barrelsLoad;
 
     /** Interface para a URLQueue */
     private URLQueueInterface urlQueue;
 
     /** Cache para armazenar pesquisas recentes */
     private Map<String, List<String>> searchCache;
+
+    private final Random random = new Random();
+
 
     //----------------------------------------CONSTRUCTOR----------------------------------------
 
@@ -26,7 +29,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      */
     public Gateway() throws RemoteException {
         super();
-        barrels = new ArrayList<>();
+        barrelsLoad = new HashMap<>();
         searchCache = new HashMap<>();
         connectToServices();
     }
@@ -38,24 +41,55 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      */
     private void connectToServices() {
         try {
-            Registry registry = LocateRegistry.getRegistry(8183);
 
-            // Procurar todos os Storage Barrels disponíveis
-            String[] boundNames = registry.list();
-            for (String name : boundNames) {
-                // Garantir que só são adicionados IndexStorageBarrels
-                if (name.startsWith("index")) barrels.add((IndexStorageBarrelInterface) registry.lookup(name));
+            // Iterar por um intervalo de portas para conectar aos IndexStorageBarrels
+            for (int port = 8182; port <= 8183; port++) {
+                try {
+                    // Conecta-se ao Registry na porta especificada
+                    Registry registry = LocateRegistry.getRegistry(port);
+                    System.out.println("Conectado ao Registry na porta: " + port);
+
+                    // Assumindo que o objeto remoto está registrado anonimamente na porta
+                    IndexStorageBarrelInterface barrel = (IndexStorageBarrelInterface) registry.lookup("index");
+                    barrelsLoad.put(barrel, 0); // Adicionar o barrel à lista
+                    System.out.println("Conectado a um Storage Barrel na porta " + port);
+                } catch (Exception e) {
+                    // Capturar falhas de conexão para portas sem serviços disponíveis
+                    System.out.println("Nenhum serviço disponível na porta: " + port);
+                }
             }
+
 
             // Conectar à URLQueue
             Registry registryQueue = LocateRegistry.getRegistry(8184);
             urlQueue = (URLQueueInterface) registryQueue.lookup("URLQueueService");
 
-            System.out.println("Gateway conectada a " + barrels.size() + " Storage Barrels e à URLQueue.");
+            System.out.println("Gateway conectada a " + barrelsLoad.size() + " Storage Barrels e à URLQueue.");
         } catch (Exception e) {
             System.err.println("Erro ao conectar aos serviços RMI: " + e.getMessage());
         }
     }
+
+    /**
+     * Seleciona o Storage Barrel mais livre.
+     * Se não houver, retorna null.
+     */
+    private IndexStorageBarrelInterface getLeastLoadedBarrel() {
+        return barrelsLoad.entrySet()
+                .stream()
+                .min(Comparator.comparingInt(Map.Entry::getValue))  // Menor carga
+                .map(Map.Entry::getKey)
+                .orElse(null);
+    }
+
+    /**
+     * Seleciona um Storage Barrel de forma aleatória.
+     */
+    private IndexStorageBarrelInterface getRandomBarrel() {
+        List<IndexStorageBarrelInterface> barrels = new ArrayList<>(barrelsLoad.keySet());
+        return barrels.get(random.nextInt(barrels.size()));
+    }
+
 
     /**
      * Pesquisa uma palavra no índice e retorna os URLs onde ela aparece.
@@ -76,22 +110,36 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         List<String> results = new ArrayList<>();
         Random random = new Random();
 
-        if (barrels.isEmpty()) {
+        if (barrelsLoad.isEmpty()) {
             System.err.println("Nenhum Storage Barrel disponível!");
             return results;
         }
 
-        // Escolher um Storage Barrel aleatório para distribuir a carga
-        IndexStorageBarrelInterface selectedBarrel = barrels.get(random.nextInt(barrels.size()));
+        // Selecionar o barrel (inicialmente aleatório)
+        IndexStorageBarrelInterface selectedBarrel = getRandomBarrel();
+
+        if (selectedBarrel == null) {
+            System.err.println("Nenhum Storage Barrel disponível!");
+            return results;
+        }
+
+        // Incrementar a carga antes de iniciar a pesquisa
+        barrelsLoad.put(selectedBarrel, barrelsLoad.get(selectedBarrel) + 1);
 
         try {
             results = selectedBarrel.searchWord(word);
             searchCache.put(word, results); // Adicionar ao cache
         } catch (RemoteException e) {
             System.err.println("Erro ao pesquisar num Storage Barrel. Tentando outro...");
-            barrels.remove(selectedBarrel); // Remover o Storage Barrel que falhou
-            if (!barrels.isEmpty()) {
+            barrelsLoad.remove(selectedBarrel); // Remover o que falhou
+
+            if (!barrelsLoad.isEmpty()) {
                 return search(word); // Tentar novamente com outro Storage Barrel
+            }
+        } finally {
+            // Decrementar a carga após a pesquisa (sucesso ou falha)
+            if (barrelsLoad.containsKey(selectedBarrel)) {
+                barrelsLoad.put(selectedBarrel, barrelsLoad.get(selectedBarrel) - 1);
             }
         }
 

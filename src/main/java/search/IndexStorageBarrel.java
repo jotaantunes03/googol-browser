@@ -1,5 +1,9 @@
 package search;
 
+import search.Sockets.ReliableMulticast;
+
+import java.io.IOException;
+import java.net.*;
 import java.rmi.*;
 import java.rmi.server.*;
 import java.rmi.registry.*;
@@ -7,6 +11,7 @@ import java.sql.*;
 import java.util.*;
 import java.io.File;
 import java.util.concurrent.CopyOnWriteArraySet;
+
 
 /**
  * Classe responsável por armazenar e gerir o índice invertido de um motor de pesquisa.
@@ -26,6 +31,10 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     /** Ligação à base de dados SQLite */
     private Connection connection;
 
+    private static final String GROUP_ADDRESS = "230.0.0.0";
+    private static final int PORT = 4446; // Porta Multicast
+    private static ReliableMulticast multicast;
+
 
 
 
@@ -41,7 +50,19 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
      */
     public IndexStorageBarrel() throws RemoteException {
         super();
-        setupDatabase();
+        try {
+            multicast = new ReliableMulticast(GROUP_ADDRESS, PORT);
+
+            System.out.println("IndexStorageBarrel conectado ao grupo multicast.");
+
+            setupDatabase();
+
+        } catch (IOException e) {
+            System.err.println("Erro ao configurar multicast: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+
     }
 
 
@@ -82,6 +103,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             }
 
         } catch (SQLException e) {
+            System.err.println("Erro ao configurar a base de dados: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -92,8 +114,26 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
 
     //----------------------------------------METHODS----------------------------------------
+    public void listen() {
+        try {
+            while (true) {
+                String message = multicast.receiveMessage();
+                String[] parts = message.split(":");
+                if (parts.length == 2) {
+                    addToIndex(parts[0], parts[1]);
+                } else if (parts.length == 3) {
+                    addLink(parts[1], parts[2]);
+                }
+            }
+        } catch (IOException | SQLException e) {
+            System.err.println("Erro na recepção de dados multicast: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+
     @Override
-    public synchronized void addToIndex(String word, String url) throws RemoteException {
+    public synchronized void addToIndex(String word, String url) throws RemoteException, SQLException {
         try {
             connection.setAutoCommit(false);  // Iniciar transação
 
@@ -128,6 +168,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             connection.commit();  // Confirmar a transação
 
         } catch (SQLException e) {
+            connection.rollback();
             e.printStackTrace();
         }
     }
@@ -187,16 +228,39 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
      */
     public static void main(String args[]) {
         try {
+
+            if (args.length < 1) {
+                System.err.println("Por favor, especifique a porta como argumento.");
+                return;
+            }
+
+            int port = Integer.parseInt(args[0]); // Porta do registro RMI
+
             // Iniciar o servidor RMI
             IndexStorageBarrel server = new IndexStorageBarrel();
-            Registry registry = LocateRegistry.createRegistry(8183);
+
+            // Criar ou conectar ao Registry na porta especificada
+            Registry registry;
+            try {
+                registry = LocateRegistry.createRegistry(port); // Cria um novo Registry
+                System.out.println("Registry criado na porta: " + port);
+            } catch (RemoteException e) {
+                // Caso já exista um Registry, conecta-se a ele
+                registry = LocateRegistry.getRegistry(port);
+                System.out.println("Conectado ao Registry existente na porta: " + port);
+            }
+
+            // Registrar o serviço com o nome "index"
             registry.rebind("index", server);
-            System.out.println("Storage Barrel pronto e à espera de pedidos...");
+            System.out.println("IndexStorageBarrel registrado com o nome 'index' na porta: " + port);
+
 
             // Conectar ao servidor da URLQueue
             Registry registryQueue = LocateRegistry.getRegistry(8184);
             urlQueueInterface = (URLQueueInterface) registryQueue.lookup("URLQueueService");
             System.out.println("Conectado à URLQueue.");
+
+            new Thread(server::listen).start();
 
             // Adicionar um URL inicial
             // urlQueueInterface.addUrl("https://pt.wikipedia.org/wiki/Wikip%C3%A9dia:P%C3%A1gina_principal");

@@ -1,6 +1,7 @@
 package search;
 
 import java.rmi.*;
+import java.sql.SQLException;
 import java.util.*;
 
 public interface IndexStorageBarrelInterface extends Remote {
@@ -13,7 +14,7 @@ public interface IndexStorageBarrelInterface extends Remote {
      * @param url O URL onde a palavra foi encontrada.
      * @throws RemoteException Caso ocorra um erro na operação remota.
      */
-    public void addToIndex(String word, String url) throws RemoteException;
+    public void addToIndex(String word, String url) throws RemoteException, SQLException;
 
 
     /**
