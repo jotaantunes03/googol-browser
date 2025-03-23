@@ -7,19 +7,40 @@ import java.util.Scanner;
 import java.net.URL;
 
 /**
- * Cliente que interage com a Gateway para pesquisar palavras e indexar URLs.
- * A comunicação é feita via RMI, utilizando a Gateway como intermediária.
+ * The GoogolClient class provides a command-line interface for users to interact
+ * with the distributed search engine system. It enables searching for words,
+ * submitting URLs for indexing, and checking inbound links to specific pages.
+ *
+ * <p>This client application communicates with the Gateway service through
+ * RMI (Remote Method Invocation) to access the distributed search functionality.</p>
+ *
+ * <p>Key features include:</p>
+ * <ul>
+ *   <li>Simple text-based user interface</li>
+ *   <li>URL submission for indexing</li>
+ *   <li>Word search functionality</li>
+ *   <li>Inbound link analysis for web pages</li>
+ *   <li>URL validation to ensure proper format</li>
+ * </ul>
+ *
+ * @author João Antunes and David Cameijo
  */
 public class GoogolClient {
 
+    //----------------------------------------ATTRIBUTES----------------------------------------
+
+    /** Scanner for reading user input from the console */
     private Scanner scanner;
+
+    /** Interface for communicating with the Gateway service */
     private static GatewayInterface gateway;
 
     //----------------------------------------CONSTRUCTOR----------------------------------------
 
     /**
-     * Construtor do GoogolClient.
-     * Inicializa o scanner para interagir com o utilizador.
+     * Constructs a new GoogolClient instance.
+     *
+     * <p>Initializes the scanner for reading user input from the command line.</p>
      */
     public GoogolClient() {
         scanner = new Scanner(System.in);
@@ -28,18 +49,22 @@ public class GoogolClient {
     //----------------------------------------MAIN----------------------------------------
 
     /**
-     * Método principal que inicia o cliente e se conecta à Gateway.
+     * The main entry point for the GoogolClient application.
      *
-     * @param args Argumentos da linha de comandos.
+     * <p>This method establishes a connection to the Gateway service via RMI
+     * and launches the interactive menu for the user.</p>
+     *
+     * @param args Command-line arguments (not used)
      */
     public static void main(String[] args) {
         try {
             GoogolClient client = new GoogolClient();
 
-            // Conectar ao servidor da Gateway RMI
+            // Connect to the Gateway service via RMI
             Registry registry = LocateRegistry.getRegistry(8185);
             gateway = (GatewayInterface) registry.lookup("GatewayService");
 
+            // Launch the interactive menu
             client.menu();
         } catch (Exception e) {
             e.printStackTrace();
@@ -49,13 +74,17 @@ public class GoogolClient {
     //----------------------------------------MENU----------------------------------------
 
     /**
-     * Exibe o menu e permite ao utilizador escolher uma ação.
+     * Displays the main menu and processes user input.
+     *
+     * <p>This method creates an interactive loop that displays menu options,
+     * reads the user's selection, and executes the corresponding functionality.</p>
      */
     private void menu() {
         try {
             boolean stopServer = false;
 
             while (!stopServer) {
+                // Display menu options
                 System.out.println("\n<<<<<<<< Googol - Motor de Pesquisa >>>>>>>>");
                 System.out.println("[1] Indexar novo URL");
                 System.out.println("[2] Realizar uma pesquisa");
@@ -63,9 +92,11 @@ public class GoogolClient {
                 System.out.println("[4] Sair");
                 System.out.print("Escolha uma opção: ");
 
+                // Read user selection
                 String userOption = scanner.nextLine();
                 clearConsole();
 
+                // Process the selected option
                 switch (userOption) {
                     case "1" -> addUrl();
                     case "2" -> searchWord();
@@ -82,10 +113,13 @@ public class GoogolClient {
         }
     }
 
-    //----------------------------------------FUNÇÕES DO CLIENTE----------------------------------------
+    //----------------------------------------CLIENT FUNCTIONS----------------------------------------
 
     /**
-     * Permite ao utilizador inserir um URL para ser indexado pela Gateway.
+     * Allows the user to submit a URL for indexing.
+     *
+     * <p>This method prompts the user for a URL, validates its format,
+     * and submits it to the Gateway for indexing if valid.</p>
      */
     private void addUrl() {
         try {
@@ -113,7 +147,10 @@ public class GoogolClient {
     }
 
     /**
-     * Permite ao utilizador pesquisar uma palavra no índice através da Gateway.
+     * Allows the user to search for a word in the index.
+     *
+     * <p>This method prompts the user for a search term, queries the Gateway
+     * for matching URLs, and displays the results.</p>
      */
     private void searchWord() {
         try {
@@ -134,7 +171,10 @@ public class GoogolClient {
     }
 
     /**
-     * Permite ao utilizador consultar todas as páginas que apontam para um determinado URL.
+     * Allows the user to check which pages link to a specific URL.
+     *
+     * <p>This method prompts the user for a URL and displays all pages
+     * that contain links to that URL based on the indexed data.</p>
      */
     private void checkInboundLinks() {
         try {
@@ -154,10 +194,13 @@ public class GoogolClient {
         }
     }
 
-    //----------------------------------------MÉTODOS AUXILIARES----------------------------------------
+    //----------------------------------------AUXILIARY METHODS----------------------------------------
 
     /**
-     * Método para limpar a consola.
+     * Clears the console screen for improved user interface readability.
+     *
+     * <p>This method detects the operating system and executes the appropriate
+     * command to clear the console screen.</p>
      */
     public final static void clearConsole() {
         try {
@@ -173,10 +216,13 @@ public class GoogolClient {
     }
 
     /**
-     * Verifica se um URL é válido.
+     * Validates if a string represents a properly formatted URL.
      *
-     * @param url O URL a ser verificado.
-     * @return true se for válido, false caso contrário.
+     * <p>This method attempts to parse the input string as a URL to verify
+     * that it conforms to the expected format.</p>
+     *
+     * @param url The string to validate as a URL
+     * @return true if the string is a valid URL, false otherwise
      */
     public static boolean isValidUrl(String url) {
         try {

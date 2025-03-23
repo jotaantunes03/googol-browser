@@ -14,19 +14,59 @@ import search.Sockets.ReliableMulticast;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class Downloader implements Runnable{
+/**
+ * The Downloader class is responsible for retrieving web content, processing it,
+ * and extracting relevant data for indexing. It implements the Runnable interface
+ * to enable concurrent processing of multiple URLs simultaneously.
+ *
+ * <p>This class performs the following key functions:</p>
+ * <ul>
+ *   <li>Fetches URLs from a distributed queue</li>
+ *   <li>Downloads and parses web page content</li>
+ *   <li>Extracts and normalizes words for indexing</li>
+ *   <li>Transmits index data via reliable multicast</li>
+ *   <li>Processes and extracts links from web pages</li>
+ * </ul>
+ *
+ * <p>The class uses RMI (Remote Method Invocation) to communicate with a URL queue
+ * and multicast sockets to distribute the processed data to storage barrels.</p>
+ *
+ * @author João Antunes and David Cameijo
+ */
+public class Downloader implements Runnable {
+
+    //----------------------------------------ATTRIBUTES----------------------------------------
+
+    /** Interface for accessing the index storage barrel through RMI */
     private static IndexStorageBarrelInterface indexStorageBarrelInterface;
+
+    /** Interface for accessing the URL queue through RMI */
     private static URLQueueInterface urlQueueInterface;
 
-    private static final String GROUP_ADDRESS = "230.0.0.0"; // Endereço Multicast
-    private static final int PORT = 4446; // Porta Multicast
+    /** The multicast group address for distributed communication */
+    private static final String GROUP_ADDRESS = "230.0.0.0";
+
+    /** The port number for multicast communication */
+    private static final int PORT = 4446;
+
+    /** Reliable multicast instance for sending processed data */
     private static ReliableMulticast multicast;
 
+    //----------------------------------------CONSTRUCTOR----------------------------------------
+
+    /**
+     * Constructs a new Downloader instance, initializing the RMI connections
+     * and multicast communication infrastructure.
+     *
+     * <p>The constructor establishes a connection to the URL queue service via RMI
+     * and initializes the reliable multicast communication channel.</p>
+     */
     public Downloader() {
         try {
+            // Initialize the reliable multicast communication infrastructure
             multicast = new ReliableMulticast(GROUP_ADDRESS, PORT);
 
-            // Conectar ao servidor da Queue (URLQueue) RMI
+            // Connect to the URL Queue service via RMI
             Registry registryQueue = LocateRegistry.getRegistry(8184);
             urlQueueInterface = (URLQueueInterface) registryQueue.lookup("URLQueueService");
 
@@ -35,109 +75,198 @@ public class Downloader implements Runnable{
         }
     }
 
+    //----------------------------------------METHODS----------------------------------------
 
-
+    /**
+     * The main execution method that processes URLs retrieved from the queue.
+     * Implements the Runnable interface to allow concurrent execution.
+     *
+     * <p>This method continuously retrieves URLs from the queue and processes them
+     * until there are no more URLs available or an exception occurs.</p>
+     */
     public void run() {
         try {
             while (true) {
-                String url = urlQueueInterface.takeUrl();  // Buscar uma URL da fila
-                if (url == null) break; // Evita ficar num loop infinito
+                // Retrieve a URL from the distributed queue
+                String url = urlQueueInterface.takeUrl();
+
+                // Exit the loop if no more URLs are available
+                if (url == null) break;
 
                 System.out.println("Thread " + Thread.currentThread().getName() + " está processando: " + url);
 
                 /*
-                // Processa a URL, indexando-a
+                // Checks if URL has already been indexed (commented out in original code)
                 if (!indexStorageBarrelInterface.isUrlIndexed(url)) {
                     System.out.println("Processando o url: " + url);
                     processUrl(url);
                 }
-
                 */
-                processUrl(url);
 
+                // Process the URL to extract and index its content
+                processUrl(url);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-
-
-    // Função para dividir palavras ligadas por pontuação
+    /**
+     * Splits a string into components based on punctuation characters.
+     *
+     * <p>This method divides a text string whenever punctuation is encountered,
+     * with the exception of hyphens which are preserved. This is useful for
+     * tokenizing text while preserving hyphenated words.</p>
+     *
+     * @param input The string to be divided
+     * @return An array of strings split by punctuation
+     */
     private static String[] splitByPunctuation(String input) {
-        return input.split("[\\p{Punct}&&[^-]]+"); // Mantém hífen, mas divide por outros sinais
+        // Split by all punctuation except hyphens
+        return input.split("[\\p{Punct}&&[^-]]+");
     }
 
-    // Remover apenas caracteres especiais, mantendo acentos
+    /**
+     * Removes special characters from a word while preserving letters and hyphens.
+     *
+     * <p>This method sanitizes text by removing everything except letters and hyphens,
+     * preserving accented characters and other Unicode letters.</p>
+     *
+     * @param input The string to be cleaned
+     * @return The cleaned string containing only letters and hyphens
+     */
     private static String cleanWord(String input) {
-        return input.replaceAll("[^\\p{L}-]", ""); // Mantém letras com acentos e hífen
+        // Keep only letters (including accented ones) and hyphens
+        return input.replaceAll("[^\\p{L}-]", "");
     }
 
-    // Remover os acentos
+    /**
+     * Normalizes text by removing diacritical marks (accents).
+     *
+     * <p>This method transforms accented characters to their base form by
+     * first decomposing them into base characters and combining marks,
+     * then removing the combining marks.</p>
+     *
+     * @param inputWord The word to be normalized
+     * @return The normalized word without diacritical marks
+     */
     private static String normalizeText(String inputWord) {
+        // Decompose accented characters and remove the accent marks
         return Normalizer.normalize(inputWord, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
     }
 
-    // Verificar se a palavra contém pelo menos uma letra
+    /**
+     * Checks if a string contains at least one alphabetic character.
+     *
+     * <p>This method verifies that a string contains at least one letter,
+     * including ASCII and common accented Latin characters.</p>
+     *
+     * @param word The string to check
+     * @return true if the string contains at least one letter, false otherwise
+     */
     private static boolean containsLetter(String word) {
-        return word.matches(".*[a-zA-Záéíóúâêîôûãõç].*"); // Retorna verdadeiro se houver pelo menos uma letra
+        // Check if the word contains at least one letter (including accented chars)
+        return word.matches(".*[a-zA-Záéíóúâêîôûãõç].*");
     }
 
-    // Função para verificar se uma palavra é um Link
+    /**
+     * Determines if a string appears to be a URL or link.
+     *
+     * <p>This method uses regular expressions to check if the input string
+     * matches common URL patterns starting with http, https, or www.</p>
+     *
+     * @param input The string to check
+     * @return true if the string matches URL patterns, false otherwise
+     */
     private static boolean isLink(String input) {
+        // Define a regex pattern for URLs
         String regex = "^(http|https|www)\\S+";
         Pattern pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
         Matcher matcher = pattern.matcher(input);
         return matcher.find();
     }
 
+    /**
+     * Processes a URL by downloading its content, extracting words and links.
+     *
+     * <p>This method performs the following operations:</p>
+     * <ol>
+     *   <li>Downloads the web page content</li>
+     *   <li>Removes non-content elements (scripts, styles, etc.)</li>
+     *   <li>Extracts and processes text content for indexing</li>
+     *   <li>Normalizes and transmits words for storage</li>
+     *   <li>Extracts links for further processing</li>
+     * </ol>
+     *
+     * @param url The URL to process
+     */
     private static void processUrl(String url) {
         try {
-
-            // System.out.println("Processando o url: " + url);
+            // Download the web page content using JSoup
             Document doc = Jsoup.connect(url).get();
 
-            // Remover elementos desnecessários (scripts, estilos, menus)
+            // Remove non-content elements that wouldn't contribute to meaningful indexing
             doc.select("script, style, nav, footer, header, aside").remove();
-            // Extrair o texto e dividir em palavras
+
+            // Extract the text content from the document body
             String text = doc.body().text();
 
-
-            for (String word: text.split("\\s+")) {
+            // Process each word in the text
+            for (String word : text.split("\\s+")) {
+                // Skip empty words and URLs
                 if (word.isEmpty() || isLink(word)) continue;
 
-                String[] splitWords = splitByPunctuation(word); // Dividir palavras ligadas por pontuação (penalties/penalties)
+                // Split compound words joined by punctuation
+                String[] splitWords = splitByPunctuation(word);
 
                 for (String part : splitWords) {
-                    part = cleanWord(part);  // Remover caracteres especiais mantendo os acentos
-                    part = normalizeText(part); // Remover os acentos
-                    part = part.toLowerCase(); // Converter para minúsculas
+                    // Clean, normalize, and convert to lowercase
+                    part = cleanWord(part);
+                    part = normalizeText(part);
+                    part = part.toLowerCase();
 
+                    // Skip empty words or words without letters
                     if (part.isEmpty() || !containsLetter(part)) continue;
 
-                    // Enviar palavra e URL via multicast
-                    String message = part + ":" + url;
+                    // Transmit the word and URL via multicast for indexing
+                    String message = part + ";" + url;
                     multicast.sendMessage(message);
                 }
             }
-            // Processar links dentro do documento
+
+            // Extract and process links from the document
             processLinks(doc, url);
 
-
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
+    /**
+     * Extracts and processes links from a web document.
+     *
+     * <p>This method identifies all hyperlinks in the document, converts them to
+     * absolute URLs, adds them to the processing queue, and transmits link
+     * relationship information via multicast for building the web graph.</p>
+     *
+     * @param document The JSoup Document containing the HTML content
+     * @param sourceUrl The URL of the source document
+     */
     private static void processLinks(Document document, String sourceUrl) {
         try {
+            // Select all hyperlink elements from the document
             Elements links = document.select("a[href]");
+
             for (Element link : links) {
+                // Convert relative URLs to absolute URLs
                 String absUrl = link.attr("abs:href");
+
                 if (!absUrl.isEmpty()) {
+                    // Add the found URL to the processing queue
                     urlQueueInterface.addUrl(absUrl);
-                    // Enviar ligação dos links via multicast
-                    String message = "addLink" + ":" + sourceUrl + ":" + absUrl;
+
+                    // Transmit link relationship information via multicast
+                    String message = "addLink" + ";" + sourceUrl + ";" + absUrl;
                     multicast.sendMessage(message);
                 }
             }
@@ -146,23 +275,29 @@ public class Downloader implements Runnable{
         }
     }
 
+    //----------------------------------------MAIN----------------------------------------
 
-
-
-
-
-
-
-
+    /**
+     * The main entry point that initiates the concurrent URL processing.
+     *
+     * <p>This method creates a thread pool of downloaders to process URLs
+     * concurrently, improving throughput and efficiency.</p>
+     *
+     * @param args Command-line arguments (not used)
+     */
     public static void main(String[] args) {
-        // Definir um pool de threads para downloaders
-        int numThreads = 5;  // Número de threads a serem executadas simultaneamente (configurável)
+        // Define the number of concurrent downloader threads to use
+        int numThreads = 5;
+
+        // Create a fixed-size thread pool for concurrent processing
         ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
 
+        // Submit multiple downloader instances to the thread pool
         for (int i = 0; i < numThreads; i++) {
             executorService.submit(new Downloader());
         }
 
+        // Initiate an orderly shutdown of the thread pool
         executorService.shutdown();
     }
 }
