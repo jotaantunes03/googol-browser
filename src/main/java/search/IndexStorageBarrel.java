@@ -179,11 +179,9 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
                 if (parts.length == 2) {
                     // Word;URL format for indexing
                     addToIndex(parts[0], parts[1]);
-                    System.out.println("Added to index: " + parts[0] + " -> " + parts[1]);
                 } else if (parts.length == 3 && "addLink".equals(parts[0])) {
                     // addLink;sourceUrl;linkedUrl format for link relationships
                     addLink(parts[1], parts[2]);
-                    System.out.println("Added link: " + parts[1] + " -> " + parts[2]);
                 } else {
                     System.err.println("Invalid message format received: " + message);
                 }
@@ -346,9 +344,6 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
                 conn.commit();  // Commit transaction
 
-                if (rowsAffected > 0) {
-                    System.out.println("Barrel " + barrelId + " adicionou link de " + sourceUrl + " para " + linkedUrl);
-                }
             }
         } catch (SQLException e) {
             System.err.println("Barrel " + barrelId + " erro ao adicionar link: " + e.getMessage());
@@ -446,6 +441,19 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         }
 
         return stats;
+    }
+
+
+
+    @Override
+    public boolean ping() throws RemoteException {
+        try {
+            // Check if the database connection is valid
+            return connection != null && !connection.isClosed();
+        } catch (SQLException e) {
+            System.err.println("Ping failed: " + e.getMessage());
+            return false;
+        }
     }
 
     //----------------------------------------MAIN----------------------------------------

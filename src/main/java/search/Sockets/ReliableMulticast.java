@@ -58,7 +58,7 @@ public class ReliableMulticast {
         byte[] buf = message.getBytes();
         DatagramPacket packet = new DatagramPacket(buf, buf.length, group, port);
         socket.send(packet);
-        System.out.println("Sent message: " + message);
+        // System.out.println("Sent message: " + message);
     }
 
     /**
@@ -72,7 +72,7 @@ public class ReliableMulticast {
         DatagramPacket packet = new DatagramPacket(buf, buf.length);
         socket.receive(packet);
         String received = new String(packet.getData(), 0, packet.getLength());
-        System.out.println("Received message: " + received);
+        // System.out.println("Received message: " + received);
         return received;
     }
 

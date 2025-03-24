@@ -38,6 +38,14 @@ public interface IndexStorageBarrelInterface extends Remote {
 
 
 
+    /**
+     * Simple ping method to verify barrel connectivity.
+     *
+     * @return true if the barrel is active and responsive
+     * @throws RemoteException if there's a communication error
+     */
+    boolean ping() throws RemoteException;
+
     boolean isUrlIndexed(String url) throws RemoteException;
 
 

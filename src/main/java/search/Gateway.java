@@ -5,6 +5,7 @@ import java.rmi.server.UnicastRemoteObject;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.util.*;
+import java.rmi.NotBoundException;
 
 /**
  * The Gateway class serves as the central coordinator for the distributed search engine.
@@ -31,6 +32,9 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
     /** Map tracking storage barrels and their current load */
     private Map<IndexStorageBarrelInterface, Integer> barrelsLoad;
+
+    /** List of port ranges to attempt barrel connections */
+    private static final int[] BARREL_PORTS = {8182, 8183};
 
     /** Interface for accessing the URL queue */
     private URLQueueInterface urlQueue;
@@ -64,34 +68,49 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     /**
      * Establishes connections to the distributed storage barrels and URL queue.
      *
-     * <p>This method attempts to connect to storage barrels on predefined ports
+     * <p>This method attempts to connect to storage barrels on multiple ports
      * and to the URL queue service. It handles connection failures gracefully
      * by logging errors and continuing with available services.</p>
      */
     private void connectToServices() {
+        // Reset barrels load to ensure fresh connection attempt
+        barrelsLoad.clear();
+
         try {
-            // Connect to storage barrels on ports in the specified range
-            for (int port = 8182; port <= 8183; port++) {
+            // Connect to storage barrels on specified ports
+            for (int port : BARREL_PORTS) {
                 try {
                     // Attempt to connect to the Registry at the current port
                     Registry registry = LocateRegistry.getRegistry(port);
-                    System.out.println("Conectado ao Registry na porta: " + port);
 
                     // Look up the storage barrel service
                     IndexStorageBarrelInterface barrel = (IndexStorageBarrelInterface) registry.lookup("index");
 
+                    // Verify barrel connectivity with a test method call
+                    barrel.ping();
+
                     // Add the barrel to the load tracking map with initial load of 0
                     barrelsLoad.put(barrel, 0);
                     System.out.println("Conectado a um Storage Barrel na porta " + port);
-                } catch (Exception e) {
+                } catch (RemoteException | NotBoundException e) {
                     // Log connection failures but continue with other ports
-                    System.out.println("Nenhum serviço disponível na porta: " + port);
+                    System.out.println("Nenhum serviço disponível na porta: " + port + " - " + e.getMessage());
                 }
             }
 
+            // Verify at least one barrel is connected
+            if (barrelsLoad.isEmpty()) {
+                System.err.println("CRITICAL: No storage barrels could be connected!");
+            }
+
             // Connect to the URL queue service
-            Registry registryQueue = LocateRegistry.getRegistry(8184);
-            urlQueue = (URLQueueInterface) registryQueue.lookup("URLQueueService");
+            try {
+                Registry registryQueue = LocateRegistry.getRegistry(8184);
+                urlQueue = (URLQueueInterface) registryQueue.lookup("URLQueueService");
+            } catch (Exception e) {
+                System.err.println("Failed to connect to URL Queue: " + e.getMessage());
+                urlQueue = null;
+            }
 
             System.out.println("Gateway conectada a " + barrelsLoad.size() + " Storage Barrels e à URLQueue.");
         } catch (Exception e) {
@@ -110,7 +129,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     private IndexStorageBarrelInterface getLeastLoadedBarrel() {
         return barrelsLoad.entrySet()
                 .stream()
-                .min(Comparator.comparingInt(Map.Entry::getValue))  // Find barrel with minimum load
+                .min(Comparator.comparingInt(Map.Entry::getValue))
                 .map(Map.Entry::getKey)
                 .orElse(null);
     }
@@ -124,8 +143,13 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      * @return A randomly selected storage barrel
      */
     private IndexStorageBarrelInterface getRandomBarrel() {
+        if (barrelsLoad.isEmpty()) {
+            // Attempt to reconnect if no barrels are available
+            connectToServices();
+        }
+
         List<IndexStorageBarrelInterface> barrels = new ArrayList<>(barrelsLoad.keySet());
-        return barrels.get(random.nextInt(barrels.size()));
+        return barrels.isEmpty() ? null : barrels.get(random.nextInt(barrels.size()));
     }
 
     /**
@@ -151,8 +175,13 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
         // Verify that barrels are available
         if (barrelsLoad.isEmpty()) {
-            System.err.println("Nenhum Storage Barrel disponível!");
-            return results;
+            // Attempt to reconnect to barrels
+            connectToServices();
+
+            if (barrelsLoad.isEmpty()) {
+                System.err.println("Nenhum Storage Barrel disponível após reconexão!");
+                return results;
+            }
         }
 
         // Select a barrel randomly for this search
@@ -177,6 +206,9 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
 
             // Remove the failed barrel from the available set
             barrelsLoad.remove(selectedBarrel);
+
+            // Attempt to reconnect to services and redistribution
+            connectToServices();
 
             if (!barrelsLoad.isEmpty()) {
                 // Retry the search with another barrel
@@ -206,7 +238,16 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
         if (urlQueue != null) {
             urlQueue.addUrl(url);
         } else {
-            System.err.println("Erro: URLQueue não está disponível...");
+            System.err.println("Erro: URLQueue não está disponível. Tentando reconectar...");
+
+            // Attempt to reconnect to URL Queue
+            try {
+                Registry registryQueue = LocateRegistry.getRegistry(8184);
+                urlQueue = (URLQueueInterface) registryQueue.lookup("URLQueueService");
+                urlQueue.addUrl(url);
+            } catch (Exception e) {
+                System.err.println("Falha definitiva na reconexão da URLQueue: " + e.getMessage());
+            }
         }
     }
 
