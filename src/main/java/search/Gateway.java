@@ -1,40 +1,42 @@
 package search;
 
+import java.rmi.Remote;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.util.*;
 import java.rmi.NotBoundException;
+import java.util.concurrent.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+
 
 /**
- * The Gateway class serves as the central coordinator for the distributed search engine.
- * It implements the GatewayInterface and extends UnicastRemoteObject to provide
- * remote method invocation capabilities.
- *
- * <p>The Gateway performs several critical functions:</p>
- * <ul>
- *   <li>Load balancing across multiple storage barrels</li>
- *   <li>Results caching to improve response times</li>
- *   <li>URL submission for indexing</li>
- *   <li>Search query distribution and aggregation</li>
- *   <li>Fault tolerance through barrel redundancy</li>
- * </ul>
- *
- * <p>The class uses RMI (Remote Method Invocation) for communication with
- * storage barrels and the URL queue system.</p>
- *
- * @author João Antunes and David Cameijo
+ * Enhanced Gateway class with comprehensive fault tolerance and health monitoring.
  */
-public class Gateway extends UnicastRemoteObject implements GatewayInterface {
+public class Gateway extends UnicastRemoteObject implements GatewayInterface, AutoCloseable {
 
     //----------------------------------------ATTRIBUTES----------------------------------------
 
     /** Map tracking storage barrels and their current load */
-    private Map<IndexStorageBarrelInterface, Integer> barrelsLoad;
+    private Map<IndexStorageBarrelInterface, BarrelHealth> barrelsHealth;
 
     /** List of port ranges to attempt barrel connections */
     private static final int[] BARREL_PORTS = {8182, 8183};
+
+    /** URL Queue service port */
+    private static final int URL_QUEUE_PORT = 8184;
+
+    /** Gateway service port */
+    private static final int GATEWAY_PORT = 8185;
+
+    /** Health check interval in seconds */
+    private static final int HEALTH_CHECK_INTERVAL = 30;
+
+    /** Maximum consecutive failures before removing a barrel */
+    private static final int MAX_CONSECUTIVE_FAILURES = 3;
 
     /** Interface for accessing the URL queue */
     private URLQueueInterface urlQueue;
@@ -45,119 +47,211 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
     /** Random number generator for barrel selection */
     private final Random random = new Random();
 
+    /** Scheduled executor for periodic health checks */
+    private ScheduledExecutorService healthCheckExecutor;
+
+    /** Formatter for logging timestamps */
+    private static final DateTimeFormatter LOG_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /**
+     * Inner class to track barrel health status
+     */
+    private static class BarrelHealth {
+        int currentLoad;
+        int consecutiveFailures;
+        long lastSuccessfulContactTime;
+
+        BarrelHealth() {
+            this.currentLoad = 0;
+            this.consecutiveFailures = 0;
+            this.lastSuccessfulContactTime = System.currentTimeMillis();
+        }
+
+        void recordSuccess() {
+            consecutiveFailures = 0;
+            lastSuccessfulContactTime = System.currentTimeMillis();
+        }
+
+        void recordFailure() {
+            consecutiveFailures++;
+        }
+
+        boolean isHealthy() {
+            return consecutiveFailures < MAX_CONSECUTIVE_FAILURES;
+        }
+    }
+
+    //----------------------------------------LOGGING METHODS----------------------------------------
+
+    /**
+     * Logs an error message with timestamp.
+     * @param message The error message to log
+     */
+    private static void logError(String message) {
+        System.err.println(String.format("[ERROR] %s - %s",
+                LocalDateTime.now().format(LOG_FORMATTER), message));
+    }
+
+    /**
+     * Logs a warning message with timestamp.
+     * @param message The warning message to log
+     */
+    private void logWarning(String message) {
+        System.out.println(String.format("[WARN] %s - %s",
+                LocalDateTime.now().format(LOG_FORMATTER), message));
+    }
+
+    /**
+     * Static method for logging info messages.
+     * @param message The message to log
+     */
+    public static void logInfo(String message) {
+        System.out.println(String.format("[INFO] %s - %s",
+                LocalDateTime.now().format(LOG_FORMATTER), message));
+    }
+
     //----------------------------------------CONSTRUCTOR----------------------------------------
 
     /**
-     * Constructs a new Gateway instance, initializing data structures and
-     * establishing connections to storage barrels and the URL queue.
+     * Constructs a new Gateway instance with enhanced health monitoring.
      *
-     * <p>The constructor initializes the barrels load map, search cache, and
-     * connects to the distributed system components via RMI.</p>
-     *
-     * @throws RemoteException If there is an error in the remote communication
+     * @throws RemoteException If there is an error in remote communication
      */
     public Gateway() throws RemoteException {
         super();
-        barrelsLoad = new HashMap<>();
-        searchCache = new HashMap<>();
+        barrelsHealth = new ConcurrentHashMap<>();
+        searchCache = new ConcurrentHashMap<>();
+
+        // Initial connection to services
         connectToServices();
+
+        // Start periodic health checks
+        startPeriodicHealthChecks();
     }
 
-    //----------------------------------------METHODS----------------------------------------
+    //----------------------------------------SERVICE CONNECTION METHODS----------------------------------------
+
+    /**
+     * Starts periodic health checks for all connected services.
+     */
+    private void startPeriodicHealthChecks() {
+        healthCheckExecutor = Executors.newScheduledThreadPool(1);
+        healthCheckExecutor.scheduleAtFixedRate(this::performHealthCheck,
+                HEALTH_CHECK_INTERVAL,
+                HEALTH_CHECK_INTERVAL,
+                TimeUnit.SECONDS
+        );
+    }
 
     /**
      * Establishes connections to the distributed storage barrels and URL queue.
-     *
-     * <p>This method attempts to connect to storage barrels on multiple ports
-     * and to the URL queue service. It handles connection failures gracefully
-     * by logging errors and continuing with available services.</p>
      */
-    private void connectToServices() {
-        // Reset barrels load to ensure fresh connection attempt
-        barrelsLoad.clear();
+    private synchronized void connectToServices() {
+        // Clear existing connections
+        barrelsHealth.clear();
+
+        logInfo("Attempting to connect to distributed services...");
 
         try {
             // Connect to storage barrels on specified ports
             for (int port : BARREL_PORTS) {
                 try {
-                    // Attempt to connect to the Registry at the current port
                     Registry registry = LocateRegistry.getRegistry(port);
-
-                    // Look up the storage barrel service
                     IndexStorageBarrelInterface barrel = (IndexStorageBarrelInterface) registry.lookup("index");
 
                     // Verify barrel connectivity with a test method call
                     barrel.ping();
 
-                    // Add the barrel to the load tracking map with initial load of 0
-                    barrelsLoad.put(barrel, 0);
-                    System.out.println("Conectado a um Storage Barrel na porta " + port);
+                    // Add the barrel to the health tracking map
+                    barrelsHealth.put(barrel, new BarrelHealth());
+                    logInfo(String.format("Successfully connected to Storage Barrel on port %d", port));
                 } catch (RemoteException | NotBoundException e) {
-                    // Log connection failures but continue with other ports
-                    System.out.println("Nenhum serviço disponível na porta: " + port + " - " + e.getMessage());
+                    logWarning(String.format("No Storage Barrel service available on port %d: %s",
+                            port, e.getMessage()));
                 }
             }
 
             // Verify at least one barrel is connected
-            if (barrelsLoad.isEmpty()) {
-                System.err.println("CRITICAL: No storage barrels could be connected!");
+            if (barrelsHealth.isEmpty()) {
+                logError("CRITICAL: No storage barrels could be connected!");
             }
 
             // Connect to the URL queue service
             try {
-                Registry registryQueue = LocateRegistry.getRegistry(8184);
+                Registry registryQueue = LocateRegistry.getRegistry(URL_QUEUE_PORT);
                 urlQueue = (URLQueueInterface) registryQueue.lookup("URLQueueService");
+                logInfo("Successfully connected to URL Queue Service");
             } catch (Exception e) {
-                System.err.println("Failed to connect to URL Queue: " + e.getMessage());
+                logError(String.format("Failed to connect to URL Queue: %s", e.getMessage()));
                 urlQueue = null;
             }
 
-            System.out.println("Gateway conectada a " + barrelsLoad.size() + " Storage Barrels e à URLQueue.");
+            logInfo(String.format("Gateway connected to %d Storage Barrels and URL Queue", barrelsHealth.size()));
         } catch (Exception e) {
-            System.err.println("Erro ao conectar aos serviços RMI: " + e.getMessage());
+            logError(String.format("Unexpected error connecting to RMI services: %s", e.getMessage()));
         }
     }
 
     /**
-     * Identifies the storage barrel with the lowest current load.
-     *
-     * <p>This method selects the storage barrel that is handling the fewest
-     * requests, enabling load balancing across the distributed system.</p>
-     *
-     * @return The least loaded storage barrel, or null if none are available
+     * Performs comprehensive health check on all connected barrels.
      */
-    private IndexStorageBarrelInterface getLeastLoadedBarrel() {
-        return barrelsLoad.entrySet()
+    private synchronized void performHealthCheck() {
+        logInfo("Performing periodic health check on distributed services...");
+
+        // Check and remove unhealthy barrels
+        List<IndexStorageBarrelInterface> barrelsToRemove = new ArrayList<>();
+
+        for (Map.Entry<IndexStorageBarrelInterface, BarrelHealth> entry : barrelsHealth.entrySet()) {
+            IndexStorageBarrelInterface barrel = entry.getKey();
+            BarrelHealth health = entry.getValue();
+
+            try {
+                // Attempt to ping the barrel
+                barrel.ping();
+                health.recordSuccess();
+                logInfo("Health check successful for a Storage Barrel");
+            } catch (RemoteException e) {
+                health.recordFailure();
+                logWarning(String.format("Health check failed for a Storage Barrel. Failure count: %d",
+                        health.consecutiveFailures));
+
+                // Mark for removal if too many consecutive failures
+                if (!health.isHealthy()) {
+                    barrelsToRemove.add(barrel);
+                    logError("A Storage Barrel has been marked for removal due to persistent failures");
+                }
+            }
+        }
+
+        // Remove unhealthy barrels
+        barrelsToRemove.forEach(barrelsHealth::remove);
+
+        // Attempt to reconnect if we've lost all barrels
+        if (barrelsHealth.isEmpty()) {
+            logError("All Storage Barrels lost. Attempting to reconnect...");
+            connectToServices();
+        }
+    }
+
+    /**
+     * Selects the least loaded and healthy storage barrel.
+     *
+     * @return The least loaded healthy storage barrel, or null if none available
+     */
+    private IndexStorageBarrelInterface selectHealthyBarrel() {
+        return barrelsHealth.entrySet()
                 .stream()
-                .min(Comparator.comparingInt(Map.Entry::getValue))
+                .filter(entry -> entry.getValue().isHealthy())
+                .min(Comparator.comparingInt(entry -> entry.getValue().currentLoad))
                 .map(Map.Entry::getKey)
                 .orElse(null);
     }
 
-    /**
-     * Selects a storage barrel randomly from the available barrels.
-     *
-     * <p>This method provides a simple form of load distribution by randomly
-     * selecting a storage barrel for processing a request.</p>
-     *
-     * @return A randomly selected storage barrel
-     */
-    private IndexStorageBarrelInterface getRandomBarrel() {
-        if (barrelsLoad.isEmpty()) {
-            // Attempt to reconnect if no barrels are available
-            connectToServices();
-        }
-
-        List<IndexStorageBarrelInterface> barrels = new ArrayList<>(barrelsLoad.keySet());
-        return barrels.isEmpty() ? null : barrels.get(random.nextInt(barrels.size()));
-    }
+    //----------------------------------------INTERFACE METHODS----------------------------------------
 
     /**
-     * Searches for a word across the distributed index and returns matching URLs.
-     *
-     * <p>This method first checks the cache for recent results, then delegates
-     * the search to an available storage barrel. It handles failures by retrying
-     * with alternative barrels and updates the load tracking accordingly.</p>
+     * Searches for a word across the distributed index with enhanced fault tolerance.
      *
      * @param word The word to search for
      * @return List of URLs containing the searched word
@@ -165,116 +259,156 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface {
      */
     @Override
     public List<String> search(String word) throws RemoteException {
-        // Check cache for existing results
+        // Check cache first
         if (searchCache.containsKey(word)) {
-            System.out.println("Cache hit para a palavra: " + word);
+            logInfo(String.format("Cache hit for word: %s", word));
             return searchCache.get(word);
         }
 
-        List<String> results = new ArrayList<>();
-
-        // Verify that barrels are available
-        if (barrelsLoad.isEmpty()) {
-            // Attempt to reconnect to barrels
+        // Ensure we have barrels
+        if (barrelsHealth.isEmpty()) {
             connectToServices();
-
-            if (barrelsLoad.isEmpty()) {
-                System.err.println("Nenhum Storage Barrel disponível após reconexão!");
-                return results;
+            if (barrelsHealth.isEmpty()) {
+                logError("No Storage Barrels available after reconnection!");
+                return Collections.emptyList();
             }
         }
 
-        // Select a barrel randomly for this search
-        IndexStorageBarrelInterface selectedBarrel = getRandomBarrel();
-
+        // Select a healthy barrel
+        IndexStorageBarrelInterface selectedBarrel = selectHealthyBarrel();
         if (selectedBarrel == null) {
-            System.err.println("Nenhum Storage Barrel disponível!");
-            return results;
+            logError("No healthy Storage Barrels available!");
+            return Collections.emptyList();
         }
 
-        // Increment the barrel's load count
-        barrelsLoad.put(selectedBarrel, barrelsLoad.get(selectedBarrel) + 1);
+        // Track barrel load
+        BarrelHealth barrelHealth = barrelsHealth.get(selectedBarrel);
+        barrelHealth.currentLoad++;
 
         try {
-            // Execute the search on the selected barrel
-            results = selectedBarrel.searchWord(word);
+            // Perform search
+            List<String> results = selectedBarrel.searchWord(word);
 
-            // Cache the results for future queries
+            // Cache results
             searchCache.put(word, results);
+
+            return results;
         } catch (RemoteException e) {
-            System.err.println("Erro ao pesquisar num Storage Barrel. Tentando outro...");
+            logError(String.format("Error searching barrel for word '%s'. Attempting recovery...", word));
 
-            // Remove the failed barrel from the available set
-            barrelsLoad.remove(selectedBarrel);
+            // Mark this barrel as failed
+            barrelHealth.recordFailure();
 
-            // Attempt to reconnect to services and redistribution
+            // If barrel is no longer healthy, remove it
+            if (!barrelHealth.isHealthy()) {
+                barrelsHealth.remove(selectedBarrel);
+            }
+
+            // Attempt to reconnect and retry
             connectToServices();
 
-            if (!barrelsLoad.isEmpty()) {
-                // Retry the search with another barrel
+            // Recursive retry with newly connected barrels
+            if (!barrelsHealth.isEmpty()) {
                 return search(word);
             }
-        } finally {
-            // Decrease the load count after processing completes
-            if (barrelsLoad.containsKey(selectedBarrel)) {
-                barrelsLoad.put(selectedBarrel, barrelsLoad.get(selectedBarrel) - 1);
-            }
-        }
 
-        return results;
+            return Collections.emptyList();
+        } finally {
+            // Decrease load
+            barrelHealth.currentLoad--;
+        }
     }
 
     /**
-     * Adds a URL to the indexing queue for processing.
-     *
-     * <p>This method submits a URL to the URL queue service for subsequent
-     * downloading and indexing by the downloader components.</p>
+     * Adds a URL to the indexing queue with improved error handling.
      *
      * @param url The URL to be indexed
      * @throws RemoteException If there is an error in remote communication
      */
     @Override
     public void addUrl(String url) throws RemoteException {
-        if (urlQueue != null) {
-            urlQueue.addUrl(url);
-        } else {
-            System.err.println("Erro: URLQueue não está disponível. Tentando reconectar...");
-
-            // Attempt to reconnect to URL Queue
+        // Ensure URL queue is connected
+        if (urlQueue == null) {
             try {
-                Registry registryQueue = LocateRegistry.getRegistry(8184);
+                Registry registryQueue = LocateRegistry.getRegistry(URL_QUEUE_PORT);
                 urlQueue = (URLQueueInterface) registryQueue.lookup("URLQueueService");
-                urlQueue.addUrl(url);
             } catch (Exception e) {
-                System.err.println("Falha definitiva na reconexão da URLQueue: " + e.getMessage());
+                logError(String.format("Definitive failure reconnecting to URL Queue: %s", e.getMessage()));
+                return;
             }
+        }
+
+        try {
+            urlQueue.addUrl(url);
+            logInfo(String.format("URL added to queue: %s", url));
+        } catch (RemoteException e) {
+            logError(String.format("Error adding URL to queue: %s. Attempting reconnection...", url));
+            urlQueue = null;
+            addUrl(url);  // Retry after nullifying
         }
     }
 
-    //----------------------------------------MAIN----------------------------------------
+    //----------------------------------------RESOURCE MANAGEMENT----------------------------------------
 
     /**
-     * The main entry point that initializes and starts the Gateway service.
-     *
-     * <p>This method creates a Gateway instance, registers it with the RMI registry,
-     * and makes it available for remote clients to access.</p>
+     * Proper shutdown method to cleanly terminate health check executor.
+     * Implements AutoCloseable interface for try-with-resources and explicit cleanup.
+     */
+    @Override
+    public void close() {
+        // Shutdown the health check executor
+        if (healthCheckExecutor != null) {
+            try {
+                // Attempt a graceful shutdown
+                healthCheckExecutor.shutdown();
+
+                // Wait for existing tasks to terminate
+                if (!healthCheckExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    // Force shutdown if tasks don't complete
+                    healthCheckExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                // Restore interrupted status
+                Thread.currentThread().interrupt();
+
+                // Force shutdown
+                healthCheckExecutor.shutdownNow();
+            }
+        }
+
+        logInfo("Gateway resources cleaned up.");
+    }
+
+
+
+
+
+    //----------------------------------------MAIN METHOD----------------------------------------
+
+    /**
+     * Main method to start the Gateway service with improved logging.
      *
      * @param args Command-line arguments (not used)
      */
     public static void main(String[] args) {
-        try {
-            // Create the Gateway instance
-            Gateway gateway = new Gateway();
+        logInfo("Starting Gateway Service...");
 
-            // Create RMI registry on the specified port
-            Registry registry = LocateRegistry.createRegistry(8185);
+        try (Gateway gateway = new Gateway()) {
+            // Create RMI registry
+            Registry registry = LocateRegistry.createRegistry(GATEWAY_PORT);
 
             // Register the Gateway service
             registry.rebind("GatewayService", gateway);
 
-            System.out.println("Gateway ativa e pronta para receber pedidos...");
-        } catch (RemoteException e) {
+            logInfo(String.format("Gateway active on port %d and ready to receive requests", GATEWAY_PORT));
+
+            // Keep the application running
+            Thread.currentThread().join();
+        } catch (RemoteException | InterruptedException e) {
+            logError("Error starting Gateway service: " + e.getMessage());
             e.printStackTrace();
         }
     }
+
+
 }
