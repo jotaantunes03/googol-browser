@@ -4,11 +4,19 @@ import java.rmi.*;
 import java.sql.SQLException;
 import java.util.*;
 
+/**
+ * The {@code IndexStorageBarrelInterface} defines a remote interface 
+ * for managing an inverted index and link graph for a distributed search engine.
+ * It extends {@code Remote} to support Remote Method Invocation (RMI).
+ * 
+ * Methods in this interface allow indexing words, searching for words, managing web links, 
+ * checking barrel connectivity, and retrieving various indexing statistics.
+ */
 public interface IndexStorageBarrelInterface extends Remote {
 
     /**
-     * Adiciona uma palavra ao índice invertido, associando-a a um URL.
-     * Os URLs são armazenados como uma string separada por `;` na base de dados.
+     * Adds a word to the inverted index, associating it with a URL.
+     * The URLs are stored as a semicolon-separated string in the database.
      *
      * @param word A palavra a ser indexada.
      * @param url O URL onde a palavra foi encontrada.
@@ -17,8 +25,7 @@ public interface IndexStorageBarrelInterface extends Remote {
     void addToIndex(String word, String url) throws RemoteException, SQLException;
 
     /**
-     * Realiza uma pesquisa no índice invertido e retorna os URLs associados a uma palavra.
-     *
+     * Performs a search in the inverted index and retrieves the URLs associated with a word.     *
      * @param word A palavra a ser pesquisada.
      * @return Lista de URLs que contêm a palavra pesquisada.
      * @throws RemoteException Caso ocorra um erro na operação remota.
@@ -26,7 +33,7 @@ public interface IndexStorageBarrelInterface extends Remote {
     List<String> searchWord(String word) throws RemoteException;
 
     /**
-     * Adiciona uma ligação entre duas páginas Web no grafo de ligações.
+     * Adds a link between two web pages in the link graph.
      *
      * @param sourceUrl O URL da página de origem.
      * @param linkedUrl O URL da página de destino.
@@ -51,9 +58,24 @@ public interface IndexStorageBarrelInterface extends Remote {
      */
     boolean isUrlIndexed(String url) throws RemoteException;
 
-    public List<String> getInboundLinks(String pageUrl) throws RemoteException;
+    /**
+     * Retrieves a list of inbound links pointing to a specified page.
+     * This method queries the link graph to find all source URLs that link to the given page URL.
+     *
+     * @param pageUrl The URL for which inbound links should be retrieved.
+     * @return A list of source URLs that link to the specified page.
+     * @throws RemoteException If a remote communication error occurs.
+     */
+    List<String> getInboundLinks(String pageUrl) throws RemoteException;
 
+    /**
+     * Retrieves the unique identifier of the barrel.
+     *
+     * @return The barrel ID as a {@code String}.
+     * @throws RemoteException If a remote communication error occurs.
+     */
     String getBarrelId() throws RemoteException;
+    
     /**
      * Get statistics about the current state of the index
      *

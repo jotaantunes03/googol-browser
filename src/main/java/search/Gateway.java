@@ -17,7 +17,21 @@ import java.util.stream.Collectors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Enhanced Gateway class with comprehensive fault tolerance and health monitoring.
+ * The {@code Gateway} class serves as the central access point for handling distributed 
+ * search requests, managing communication between clients and storage barrels.
+ * <p>
+ * This implementation includes:
+ * <ul>
+ *     <li>Fault tolerance mechanisms for handling remote failures</li>
+ *     <li>Load balancing between multiple storage barrels</li>
+ *     <li>Health monitoring and automatic reconnection strategies</li>
+ * </ul>
+ * Implements {@link GatewayInterface} to provide core search and indexing functionalities.
+ * </p>
+ * <p>
+ * Additionally, this class implements {@link AutoCloseable} to ensure proper resource 
+ * management when shutting down.
+ * </p>
  */
 public class Gateway extends UnicastRemoteObject implements GatewayInterface, AutoCloseable {
 
@@ -183,6 +197,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
 
     /**
      * Starts periodic health checks for all connected services.
+     * Health checks are scheduled to run at a fixed interval.
      */
     private void startPeriodicHealthChecks() {
         healthCheckExecutor = Executors.newScheduledThreadPool(1);
@@ -194,7 +209,8 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
     }
 
     /**
-     * Establishes connections to the distributed storage barrels and URL queue.
+     * Establishes connections to the distributed storage barrels and URL queue service.
+     * If a connection fails, logs an error and attempts to connect to remaining services.
      */
     private synchronized void connectToServices() {
         // Clear existing connections
@@ -254,7 +270,9 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
     }
 
     /**
-     * Performs comprehensive health check on all connected barrels.
+     * Performs a comprehensive health check on all connected storage barrels.
+     * If a barrel repeatedly fails the check, it is marked for removal.
+     * If all barrels are lost, attempts to reconnect.
      */
     private synchronized void performHealthCheck() {
         logInfo("Performing periodic health check on distributed services...");
@@ -287,7 +305,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
         // Remove unhealthy barrels
         barrelsToRemove.forEach(barrelsHealth::remove);
 
-        // Attempt to reconnect if we've lost all barrels
+        // Attempt to reconnect if all barrels are lost
         if (barrelsHealth.isEmpty()) {
             logError("All Storage Barrels lost. Attempting to reconnect...");
             connectToServices();
@@ -430,9 +448,16 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
         }
     }
 
+    /**
+     * Checks inbound links pointing to a specific page URL.
+     * If no healthy storage barrels are available, attempts reconnection before retrying.
+     *
+     * @param pageUrl The URL to check inbound links for.
+     * @return A list of URLs that link to the specified page.
+     * @throws RemoteException If a remote communication error occurs.
+     */
     public List<String> checkInboundLinks(String pageUrl) throws RemoteException {
         // Check cache first (if you have caching enabled for inbound links)
-
 
         // Ensure we have healthy storage barrels available
         if (barrelsHealth.isEmpty()) {
@@ -457,9 +482,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
         try {
             // Perform the inbound links lookup on the selected barrel
             List<String> results = selectedBarrel.getInboundLinks(pageUrl);
-
-
-
             return results;
         } catch (RemoteException e) {
             logError(String.format("Error checking inbound links for '%s'. Attempting recovery...", pageUrl));
@@ -487,22 +509,35 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
         }
     }
 
+
+    /**
+     * Retrieves the title of a webpage by fetching and parsing its HTML.
+     *
+     * @param url The URL of the webpage.
+     * @return The title of the page, or "Failed to fetch title" if retrieval fails.
+     */
     public static String getTitle(String url) {
         try {
             Document doc = Jsoup.connect(url).get();
             return doc.title();
-        } catch ( IOException e ) {
+        } catch (IOException e) {
             e.printStackTrace();
             return "Failed to fetch title";
         }
     }
 
-    // Function to extract a short citation (meta description or first paragraph)
+
+    /**
+     * Extracts a short citation from a webpage.
+     * It attempts to fetch the meta description or the first paragraph of the page.
+     *
+     * @param url The URL of the webpage.
+     * @return A short citation or "Failed to fetch citation" if retrieval fails.
+     */
     public static String getShortCitation(String url) {
         try {
             Document doc = Jsoup.connect(url).get();
-            // Otherwise, get the first paragraph text
-            return doc.select("p").first().text();
+            return doc.select("p").first().text(); // Get the first paragraph text
         } catch (IOException | NullPointerException e) {
             e.printStackTrace();
             return "Failed to fetch citation";

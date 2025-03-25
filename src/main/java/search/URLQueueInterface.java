@@ -1,30 +1,35 @@
 package search;
+
 import java.rmi.Remote;
 import java.rmi.RemoteException;
 
+/**
+ * Remote interface for managing a URL queue in a distributed search system.
+ * Provides methods for adding, retrieving, and checking the status of URLs in the queue.
+ */
 public interface URLQueueInterface extends Remote {
 
     /**
-     * Adiciona um novo URL à Queue.
-     * @param url Url a ser inserido.
-     * @throws RemoteException Se ocorrer um erro de comunicação remota.
+     * Adds a new URL to the queue.
+     *
+     * @param url The URL to be inserted into the queue.
+     * @throws RemoteException If a remote communication error occurs.
      */
     void addUrl(String url) throws RemoteException;
 
     /**
-     * Obtém o próximo URL da Queue para ser processado.
+     * Retrieves the next URL from the queue for processing.
      *
-     * @return O próximo URL na fila ou null se a fila estiver vazia.
-     * @throws RemoteException Se ocorrer um erro de comunicação remota.
+     * @return The next URL in the queue, or {@code null} if the queue is empty.
+     * @throws RemoteException If a remote communication error occurs.
      */
     String takeUrl() throws RemoteException;
 
     /**
-     * Verifica se a fila de URLs está vazia.
+     * Checks whether the URL queue is empty.
      *
-     * @return <b>True</b> se a fila de URLs estiver vazia.
-     * <b>False</b> se contiver um ou mais URLs.
-     * @throws RemoteException Se ocorrer um erro de comunicação remota.
+     * @return {@code true} if the queue is empty, {@code false} if it contains one or more URLs.
+     * @throws RemoteException If a remote communication error occurs.
      */
     boolean isEmpty() throws RemoteException;
 }

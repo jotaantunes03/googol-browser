@@ -31,6 +31,8 @@ import search.Sockets.ReliableMulticast;
  *
  * <p>The class uses RMI (Remote Method Invocation) to communicate with a URL queue
  * and multicast sockets to distribute the processed data to storage barrels.</p>
+ * 
+ * @author João Antunes, David Cameijo and Gabriel Pinto
  */
 public class Downloader {
 

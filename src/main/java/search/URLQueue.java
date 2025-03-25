@@ -21,7 +21,7 @@ import java.util.Queue;
  * 3. URLs are processed in a first-in-first-out (FIFO) manner
  * 4. The queue can be accessed remotely via Java RMI
  *
- * @author João Antunes and David Cameijo
+ * @author João Antunes, David Cameijo and Gabriel Pinto
  */
 public class URLQueue extends UnicastRemoteObject implements URLQueueInterface {
 

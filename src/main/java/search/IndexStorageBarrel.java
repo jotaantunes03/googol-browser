@@ -27,7 +27,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
  * This class provides methods for adding items to the index, searching for words,
  * managing link relationships, and obtaining index statistics.
  *
- * @author João Antunes and David Cameijo
+ * @author João Antunes, David Cameijo and Gabriel Pinto
  */
 public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStorageBarrelInterface {
 
@@ -348,7 +348,15 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     }
 
 
-
+    /**
+     * Sorts a list of URLs based on the number of inbound links they have.
+     * The method queries the database to count how many times each URL appears 
+     * as a linked URL in the "links_graph" table, then sorts the URLs in 
+     * descending order based on this count.
+     *
+     * @param urls The list of URLs to be sorted.
+     * @return A sorted list of URLs with the highest linked count first.
+     */
     public List<String> sortUrlsByLinkedCount(List<String> urls) {
         // A map to store each URL and its count from the links_graph table.
         Map<String, Integer> urlCountMap = new HashMap<>();
@@ -380,6 +388,14 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         return sortedUrls;
     }
 
+    /**
+     * Retrieves a list of inbound links pointing to a specified page.
+     * This method queries the "links_graph" table to find all source URLs 
+     * that link to the given page URL.
+     *
+     * @param pageUrl The URL for which inbound links should be retrieved.
+     * @return A list of URLs that link to the specified page.
+     */
     public List<String> getInboundLinks(String pageUrl) {
         List<String> inboundLinks = new ArrayList<>();
         String sql = "SELECT source_url FROM links_graph WHERE linked_url = ?";
@@ -526,7 +542,13 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     }
 
 
-
+    /**
+     * Checks if the database connection is active and available.
+     * This method is used to verify the connectivity status of the system.
+     *
+     * @return true if the database connection is valid and open, false otherwise.
+     * @throws RemoteException if a remote communication error occurs.
+    */
     @Override
     public boolean ping() throws RemoteException {
         try {
@@ -538,6 +560,13 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         }
     }
 
+    /**
+     * Retrieves the unique identifier of the barrel.
+     * The barrel ID is assumed to be stored as a class field.
+     *
+     * @return The barrel ID as a String.
+     * @throws RemoteException if a remote communication error occurs.
+     */
     public String getBarrelId() throws RemoteException {
         try {
             return barrelId;  // Assuming barrelId is a field in the class

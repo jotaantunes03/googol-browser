@@ -23,7 +23,7 @@ import java.net.URI;
  *   <li>URL validation to ensure proper format</li>
  * </ul>
  *
- * @author João Antunes and David Cameijo
+ * @author João Antunes, David Cameijo and Gabriel Pinto
  */
 public class GoogolClient {
 
@@ -195,35 +195,35 @@ public class GoogolClient {
             e.printStackTrace();
         }
     }
+    
     /**
-     * Imprime os resultados da pesquisa agrupados de 10 em 10.
+     * Prints search results grouped in pages of 10 items each.
      *
-     * @param results Lista completa dos resultados da pesquisa.
+     * @param results The complete list of search results.
      */
-
     public static void printResultsInPages(List<String> results) {
         final int pageSize = 10;
         int total = results.size();
         Scanner scanner = new Scanner(System.in);
 
         for (int i = 0; i < total; i += pageSize) {
-            System.out.println("Página " + ((i / pageSize) + 1) + ":");
+            System.out.println("Page " + ((i / pageSize) + 1) + ":");
 
-            // Define o fim do grupo atual
+            // Define the end of the current group
             int end = Math.min(i + pageSize, total);
             for (int j = i; j < end; j++) {
                 System.out.println(results.get(j));
             }
 
-            System.out.println(); // Linha em branco para separar as páginas
+            System.out.println(); // Blank line to separate pages
 
-            // Se houver mais páginas, aguarda o usuário pressionar ENTER para continuar
+            // If there are more pages, wait for the user to press ENTER to continue
             if (end < total) {
-                System.out.println("Pressione ENTER para ver a próxima página ou 'M' para voltar ao menu...");
+                System.out.println("Press ENTER to view the next page or 'M' to return to the menu...");
                 String choice = scanner.nextLine().toUpperCase();
 
                 if ("M".equals(choice)) {
-                    System.out.println("Voltando ao menu...");
+                    System.out.println("Returning to the menu...");
                     return; // Exit this method and go back to the menu
                 }
             }
