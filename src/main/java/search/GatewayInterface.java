@@ -22,4 +22,8 @@ public interface GatewayInterface extends Remote {
      * @throws RemoteException Caso ocorra um erro de comunicação remota.
      */
     void addUrl(String url) throws RemoteException;
+
+    List<String> checkInboundLinks(String pageUrl) throws RemoteException;
+
+    String getSystemState() throws RemoteException;
 }

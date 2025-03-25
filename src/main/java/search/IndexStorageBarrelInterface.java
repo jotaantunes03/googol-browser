@@ -1,6 +1,7 @@
 package search;
 
 import java.rmi.*;
+import java.sql.SQLException;
 import java.util.*;
 
 public interface IndexStorageBarrelInterface extends Remote {
@@ -13,8 +14,7 @@ public interface IndexStorageBarrelInterface extends Remote {
      * @param url O URL onde a palavra foi encontrada.
      * @throws RemoteException Caso ocorra um erro na operação remota.
      */
-    public void addToIndex(String word, String url) throws RemoteException;
-
+    void addToIndex(String word, String url) throws RemoteException, SQLException;
 
     /**
      * Realiza uma pesquisa no índice invertido e retorna os URLs associados a uma palavra.
@@ -23,8 +23,7 @@ public interface IndexStorageBarrelInterface extends Remote {
      * @return Lista de URLs que contêm a palavra pesquisada.
      * @throws RemoteException Caso ocorra um erro na operação remota.
      */
-    public List<String> searchWord(String word) throws RemoteException;
-
+    List<String> searchWord(String word) throws RemoteException;
 
     /**
      * Adiciona uma ligação entre duas páginas Web no grafo de ligações.
@@ -33,11 +32,34 @@ public interface IndexStorageBarrelInterface extends Remote {
      * @param linkedUrl O URL da página de destino.
      * @throws RemoteException Caso ocorra um erro na operação remota.
      */
-    public void addLink(String sourceUrl, String linkedUrl) throws RemoteException;
+    void addLink(String sourceUrl, String linkedUrl) throws RemoteException;
 
+    /**
+     * Simple ping method to verify barrel connectivity.
+     *
+     * @return true if the barrel is active and responsive
+     * @throws RemoteException if there's a communication error
+     */
+    boolean ping() throws RemoteException;
 
-
+    /**
+     * Check if a specific URL is already indexed
+     *
+     * @param url The URL to check
+     * @return true if the URL is already in the index
+     * @throws RemoteException if there's a communication error
+     */
     boolean isUrlIndexed(String url) throws RemoteException;
 
+    public List<String> getInboundLinks(String pageUrl) throws RemoteException;
+
+    String getBarrelId() throws RemoteException;
+    /**
+     * Get statistics about the current state of the index
+     *
+     * @return A map of statistical information
+     * @throws RemoteException if there's a communication error
+     */
+    Map<String, Object> getStats() throws RemoteException;
 
 }

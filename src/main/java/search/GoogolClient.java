@@ -4,22 +4,43 @@ import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.util.List;
 import java.util.Scanner;
-import java.net.URL;
+import java.net.URI;
 
 /**
- * Cliente que interage com a Gateway para pesquisar palavras e indexar URLs.
- * A comunicação é feita via RMI, utilizando a Gateway como intermediária.
+ * The GoogolClient class provides a command-line interface for users to interact
+ * with the distributed search engine system. It enables searching for words,
+ * submitting URLs for indexing, and checking inbound links to specific pages.
+ *
+ * <p>This client application communicates with the Gateway service through
+ * RMI (Remote Method Invocation) to access the distributed search functionality.</p>
+ *
+ * <p>Key features include:</p>
+ * <ul>
+ *   <li>Simple text-based user interface</li>
+ *   <li>URL submission for indexing</li>
+ *   <li>Word search functionality</li>
+ *   <li>Inbound link analysis for web pages</li>
+ *   <li>URL validation to ensure proper format</li>
+ * </ul>
+ *
+ * @author João Antunes and David Cameijo
  */
 public class GoogolClient {
 
+    //----------------------------------------ATTRIBUTES----------------------------------------
+
+    /** Scanner for reading user input from the console */
     private Scanner scanner;
+
+    /** Interface for communicating with the Gateway service */
     private static GatewayInterface gateway;
 
     //----------------------------------------CONSTRUCTOR----------------------------------------
 
     /**
-     * Construtor do GoogolClient.
-     * Inicializa o scanner para interagir com o utilizador.
+     * Constructs a new GoogolClient instance.
+     *
+     * <p>Initializes the scanner for reading user input from the command line.</p>
      */
     public GoogolClient() {
         scanner = new Scanner(System.in);
@@ -28,18 +49,22 @@ public class GoogolClient {
     //----------------------------------------MAIN----------------------------------------
 
     /**
-     * Método principal que inicia o cliente e se conecta à Gateway.
+     * The main entry point for the GoogolClient application.
      *
-     * @param args Argumentos da linha de comandos.
+     * <p>This method establishes a connection to the Gateway service via RMI
+     * and launches the interactive menu for the user.</p>
+     *
+     * @param args Command-line arguments (not used)
      */
     public static void main(String[] args) {
         try {
             GoogolClient client = new GoogolClient();
 
-            // Conectar ao servidor da Gateway RMI
+            // Connect to the Gateway service via RMI
             Registry registry = LocateRegistry.getRegistry(8185);
             gateway = (GatewayInterface) registry.lookup("GatewayService");
 
+            // Launch the interactive menu
             client.menu();
         } catch (Exception e) {
             e.printStackTrace();
@@ -49,28 +74,36 @@ public class GoogolClient {
     //----------------------------------------MENU----------------------------------------
 
     /**
-     * Exibe o menu e permite ao utilizador escolher uma ação.
+     * Displays the main menu and processes user input.
+     *
+     * <p>This method creates an interactive loop that displays menu options,
+     * reads the user's selection, and executes the corresponding functionality.</p>
      */
     private void menu() {
         try {
             boolean stopServer = false;
 
             while (!stopServer) {
+                // Display menu options
                 System.out.println("\n<<<<<<<< Googol - Motor de Pesquisa >>>>>>>>");
                 System.out.println("[1] Indexar novo URL");
                 System.out.println("[2] Realizar uma pesquisa");
                 System.out.println("[3] Consultar ligações para uma página específica");
-                System.out.println("[4] Sair");
+                System.out.println("[4] Listar estatísticas do sistema");
+                System.out.println("[5] Sair");
                 System.out.print("Escolha uma opção: ");
 
+                // Read user selection
                 String userOption = scanner.nextLine();
                 clearConsole();
 
+                // Process the selected option
                 switch (userOption) {
                     case "1" -> addUrl();
                     case "2" -> searchWord();
                     case "3" -> checkInboundLinks();
-                    case "4" -> {
+                    case "4" -> listStats();
+                    case "5" -> {
                         stopServer = true;
                         System.out.println("A sair do Googol...");
                     }
@@ -82,10 +115,13 @@ public class GoogolClient {
         }
     }
 
-    //----------------------------------------FUNÇÕES DO CLIENTE----------------------------------------
+    //----------------------------------------CLIENT FUNCTIONS----------------------------------------
 
     /**
-     * Permite ao utilizador inserir um URL para ser indexado pela Gateway.
+     * Allows the user to submit a URL for indexing.
+     *
+     * <p>This method prompts the user for a URL, validates its format,
+     * and submits it to the Gateway for indexing if valid.</p>
      */
     private void addUrl() {
         try {
@@ -113,7 +149,10 @@ public class GoogolClient {
     }
 
     /**
-     * Permite ao utilizador pesquisar uma palavra no índice através da Gateway.
+     * Allows the user to search for a word in the index.
+     *
+     * <p>This method prompts the user for a search term, queries the Gateway
+     * for matching URLs, and displays the results.</p>
      */
     private void searchWord() {
         try {
@@ -125,7 +164,7 @@ public class GoogolClient {
                 System.out.println("Nenhum resultado encontrado para a palavra '" + searchWord + "'.");
             } else {
                 System.out.println("\nResultados encontrados:");
-                results.forEach(url -> System.out.println("🔗 " + url));
+                printResultsInPages(results);
             }
         } catch (Exception e) {
             System.out.println("Erro ao pesquisar palavra.");
@@ -134,13 +173,16 @@ public class GoogolClient {
     }
 
     /**
-     * Permite ao utilizador consultar todas as páginas que apontam para um determinado URL.
+     * Allows the user to check which pages link to a specific URL.
+     *
+     * <p>This method prompts the user for a URL and displays all pages
+     * that contain links to that URL based on the indexed data.</p>
      */
     private void checkInboundLinks() {
         try {
             System.out.print("Digite o URL para ver as ligações recebidas: ");
             String url = scanner.nextLine();
-            List<String> inboundLinks = gateway.search(url);
+            List<String> inboundLinks = gateway.checkInboundLinks(url);
 
             if (inboundLinks.isEmpty()) {
                 System.out.println("Nenhuma página aponta para '" + url + "'.");
@@ -153,11 +195,62 @@ public class GoogolClient {
             e.printStackTrace();
         }
     }
+    /**
+     * Imprime os resultados da pesquisa agrupados de 10 em 10.
+     *
+     * @param results Lista completa dos resultados da pesquisa.
+     */
 
-    //----------------------------------------MÉTODOS AUXILIARES----------------------------------------
+    public static void printResultsInPages(List<String> results) {
+        final int pageSize = 10;
+        int total = results.size();
+        Scanner scanner = new Scanner(System.in);
+
+        for (int i = 0; i < total; i += pageSize) {
+            System.out.println("Página " + ((i / pageSize) + 1) + ":");
+
+            // Define o fim do grupo atual
+            int end = Math.min(i + pageSize, total);
+            for (int j = i; j < end; j++) {
+                System.out.println(results.get(j));
+            }
+
+            System.out.println(); // Linha em branco para separar as páginas
+
+            // Se houver mais páginas, aguarda o usuário pressionar ENTER para continuar
+            if (end < total) {
+                System.out.println("Pressione ENTER para ver a próxima página ou 'M' para voltar ao menu...");
+                String choice = scanner.nextLine().toUpperCase();
+
+                if ("M".equals(choice)) {
+                    System.out.println("Voltando ao menu...");
+                    return; // Exit this method and go back to the menu
+                }
+            }
+        }
+    }
 
     /**
-     * Método para limpar a consola.
+     * New method to list system statistics.
+     */
+    private void listStats() {
+        try {
+            // Assuming getSystemState() is defined in the GatewayInterface
+            String systemState = gateway.getSystemState();
+            System.out.println("\nEstatísticas do Sistema:");
+            System.out.println(systemState);
+        } catch (Exception e) {
+            System.out.println("Erro ao obter estatísticas do sistema.");
+            e.printStackTrace();
+        }
+    }
+    //----------------------------------------AUXILIARY METHODS----------------------------------------
+
+    /**
+     * Clears the console screen for improved user interface readability.
+     *
+     * <p>This method detects the operating system and executes the appropriate
+     * command to clear the console screen.</p>
      */
     public final static void clearConsole() {
         try {
@@ -173,14 +266,17 @@ public class GoogolClient {
     }
 
     /**
-     * Verifica se um URL é válido.
+     * Validates if a string represents a properly formatted URL.
      *
-     * @param url O URL a ser verificado.
-     * @return true se for válido, false caso contrário.
+     * <p>This method attempts to parse the input string as a URL to verify
+     * that it conforms to the expected format.</p>
+     *
+     * @param url The string to validate as a URL
+     * @return true if the string is a valid URL, false otherwise
      */
     public static boolean isValidUrl(String url) {
         try {
-            new URL(url).toURI();
+            URI uri = new URI(url);
             return true;
         } catch (Exception e) {
             return false;
