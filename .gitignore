@@ -2,3 +2,6 @@ urlqueue.db
 *.db
 .idea/
 Index_BD/
+target/
+testes para o projeto de SD/
+urlqueue.db
