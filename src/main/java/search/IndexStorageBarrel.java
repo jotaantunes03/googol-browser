@@ -11,7 +11,8 @@ import java.sql.*;
 import java.util.*;
 import java.io.File;
 import java.util.concurrent.CopyOnWriteArraySet;
-
+import java.text.Normalizer;
+import java.util.regex.Pattern;
 /**
  * IndexStorageBarrel implements a distributed inverted index storage system for a search engine.
  *
@@ -297,12 +298,18 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
      * @throws RemoteException If a remote communication error occurs
      */
     @Override
-    public List<String> searchWord(String word) throws RemoteException {
+    public List<String> searchWord(String phrase) throws RemoteException {
         List<String> results = new ArrayList<>();
+
+        // Normalize the phrase: Remove accents, special characters, and convert to lowercase
+        String normalizedPhrase = normalizePhrase(phrase);
+        System.err.println(normalizedPhrase);
+
         try (PreparedStatement stmt = connection.prepareStatement("SELECT urls FROM index_data WHERE word = ?")) {
-            stmt.setString(1, word);
+            stmt.setString(1, normalizedPhrase);
             ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
+
+            while (rs.next()) {
                 String[] urls = rs.getString("urls").split(";");
                 results.addAll(Arrays.asList(urls));
             }
@@ -311,6 +318,44 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             e.printStackTrace();
         }
         return results;
+    }
+
+    // Helper method to normalize phrases (handles multi-word input)
+    private String normalizePhrase(String phrase) {
+        if (phrase == null) return null;
+
+        // Split the phrase into words, normalize each one, and join them back with a space
+        String[] words = phrase.split("\\s+");
+        StringBuilder normalized = new StringBuilder();
+        for (String word : words) {
+            String cleanWord = normalizeWord(word);
+            if (!cleanWord.isEmpty()) {
+                if (normalized.length() > 0) {
+                    normalized.append(" ");
+                }
+                normalized.append(cleanWord);
+            }
+        }
+        return normalized.toString();
+    }
+
+    // Helper method to normalize a single word
+    private String normalizeWord(String word) {
+        if (word == null) return "";
+
+        // Convert to lowercase
+        String normalized = word.toLowerCase();
+
+        // Normalize accents using NFD (Normalization Form Decomposed)
+        normalized = java.text.Normalizer.normalize(normalized, java.text.Normalizer.Form.NFD);
+
+        // Remove diacritical marks (accents)
+        normalized = normalized.replaceAll("\\p{M}", "");
+
+        // Remove special characters, keeping only letters and numbers
+        normalized = normalized.replaceAll("[^a-z0-9]", "");
+
+        return normalized;
     }
 
     /**

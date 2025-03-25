@@ -576,44 +576,39 @@ public class Downloader {
         try {
             // Initialize the downloader
             Downloader downloader = new Downloader();
-
+    
             // If initialization failed, exit the program
             if (!isOperational) {
                 System.err.println("Downloader failed to initialize critical components. Exiting...");
                 System.exit(1);
             }
-
+    
             // Define the batch size for parallel processing
             int batchSize = 10;
-
-            // Define maximum number of empty batches before exiting
-            int maxEmptyBatches = 3;
+    
+            // Counter for consecutive empty batches (for logging purposes)
             int emptyBatchCount = 0;
-
-            // Continue processing until there are no more URLs or too many empty batches
-            while (emptyBatchCount < maxEmptyBatches) {
+    
+            // Run indefinitely
+            while (true) {
                 int processedCount = processBatch(batchSize);
-
-                // If no URLs were processed, increment empty batch counter
+    
                 if (processedCount == 0) {
                     emptyBatchCount++;
-                    System.out.println("Empty batch encountered. Empty batch count: " + emptyBatchCount + "/" + maxEmptyBatches);
-
-                    // Wait before trying again to avoid hammering the queue
-                    try {
-                        Thread.sleep(2000);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        System.err.println("Sleep interrupted: " + e.getMessage());
-                    }
+                    System.out.println("Empty batch encountered. Empty batch count: " + emptyBatchCount);
+                    Thread.sleep(3000);
                 } else {
                     // Reset empty batch counter if URLs were processed
                     emptyBatchCount = 0;
                 }
+                // Sleep for 5 seconds before checking again
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    System.err.println("Sleep interrupted: " + e.getMessage());
+                }
             }
-
-            System.out.println("Downloader completed processing. No more URLs available or maximum empty batches reached.");
-
         } catch (Exception e) {
             System.err.println("Fatal error in Downloader: " + e.getMessage());
             e.printStackTrace();
