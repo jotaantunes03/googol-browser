@@ -333,7 +333,7 @@ public class Downloader {
         try {
             // Download the web page content using JSoup
             Document doc = Jsoup.connect(url)
-                    .timeout(1000000)  // Set a 1000-second timeout
+                    .timeout(100000)  // Set a 1000-second timeout
                     .userAgent("Mozilla/5.0")  // Use a common user agent
                     .ignoreHttpErrors(true)  // Continue even if HTTP errors occur
                     .get();

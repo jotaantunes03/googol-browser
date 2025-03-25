@@ -377,8 +377,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
             List<String> results = urls.parallelStream()
                     .map(url -> {
                         String title = getTitle(url);
-                        String excerpt = getShortCitation(url);
-                        return url + " Titulo: " + title + " - Paragrafo: " + excerpt;
+                        return "URL" + url + "\n" + title + "\n";
                     })
                     .collect(Collectors.toList());
 
@@ -514,12 +513,12 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
      * Retrieves the title of a webpage by fetching and parsing its HTML.
      *
      * @param url The URL of the webpage.
-     * @return The title of the page, or "Failed to fetch title" if retrieval fails.
+     * @return The title of the page with the first paragrapher, or "Failed to fetch title" if retrieval fails.
      */
     public static String getTitle(String url) {
         try {
             Document doc = Jsoup.connect(url).get();
-            return doc.title();
+            return doc.title() + "\n" + doc.select("p").first().text();
         } catch (IOException e) {
             e.printStackTrace();
             return "Failed to fetch title";
