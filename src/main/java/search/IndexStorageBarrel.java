@@ -2,7 +2,9 @@ package search;
 
 import search.Sockets.ReliableMulticast;
 
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.*;
 import java.rmi.*;
 import java.rmi.server.*;
@@ -40,16 +42,21 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     private Connection connection;
 
     /** Multicast group address for distributed communication */
-    private static final String GROUP_ADDRESS = "230.0.0.0";
+    private static String GROUP_ADDRESS = "230.0.0.0";
 
     /** Port number for multicast communication */
-    private static final int PORT = 4446;
+    private static int PORT = 4446;
+    private static int URL_QUEUE_PORT = 8184;
+    private static String QUEUE_IP = "localhost";
+
 
     /** ReliableMulticast instance for group communication */
     private static ReliableMulticast multicast;
 
     /** Unique identifier for this barrel instance, used to create a unique database */
     private final String barrelId;
+
+
 
     //----------------------------------------CONSTRUCTORS----------------------------------------
 
@@ -73,6 +80,20 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
      */
     public IndexStorageBarrel(String barrelId) throws RemoteException {
         super();
+        try (InputStream input = new FileInputStream("../config.properties")) {
+            Properties prop = new Properties();
+            prop.load(input);
+
+
+            PORT = Integer.parseInt(prop.getProperty("PORT_MULTICAST_COMMUNICATION"));
+            GROUP_ADDRESS = prop.getProperty("MULTICAST_ADDRESS");
+            URL_QUEUE_PORT = Integer.parseInt(prop.getProperty("URL_QUEUE_PORT"));
+            QUEUE_IP = prop.getProperty("QUEUE_IP");
+        } catch (IOException ex) {
+            System.out.println(ex.getMessage());
+        }
+
+
         this.barrelId = barrelId;
         try {
             multicast = new ReliableMulticast(GROUP_ADDRESS, PORT);
@@ -614,14 +635,18 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             IndexStorageBarrel server = new IndexStorageBarrel(barrelId);
 
             // Create or connect to Registry on the specified port
-            Registry registry;
+            Registry registry = null;
             try {
                 registry = LocateRegistry.createRegistry(port); // Create a new Registry
                 System.out.println("Registry criado na porta: " + port);
             } catch (RemoteException e) {
+                /*
                 // If a Registry already exists, connect to it
                 registry = LocateRegistry.getRegistry(port);
                 System.out.println("Conectado ao Registry existente na porta: " + port);
+                */
+                System.out.println("Entrou no sitio de tentar reconectar...");
+                System.exit(1); // Encerra o programa com um código de erro
             }
 
             // Register the service with the name "index"
@@ -631,7 +656,7 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
             // Connect to the URLQueue server
             try {
-                Registry registryQueue = LocateRegistry.getRegistry(8184);
+                Registry registryQueue = LocateRegistry.getRegistry(QUEUE_IP, URL_QUEUE_PORT);
                 urlQueueInterface = (URLQueueInterface) registryQueue.lookup("URLQueueService");
                 System.out.println("Barrel " + barrelId + " conectado à URLQueue.");
             } catch (Exception e) {

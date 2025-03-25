@@ -1,11 +1,15 @@
 package search;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.sql.*;
 import java.util.LinkedList;
+import java.util.Properties;
 import java.util.Queue;
 
 /**
@@ -32,6 +36,7 @@ public class URLQueue extends UnicastRemoteObject implements URLQueueInterface {
 
     /** In-memory queue for high-performance URL operations */
     private Queue<String> queue;
+    private static int URL_PORT = 8184;
 
     //----------------------------------------CONSTRUCTOR----------------------------------------
 
@@ -47,6 +52,16 @@ public class URLQueue extends UnicastRemoteObject implements URLQueueInterface {
      */
     public URLQueue() throws RemoteException {
         super();
+
+        try (InputStream input = new FileInputStream("../config.properties")) {
+            Properties prop = new Properties();
+            prop.load(input);
+
+            URL_PORT = Integer.parseInt(prop.getProperty("URL_QUEUE_PORT"));
+        } catch (IOException ex) {
+            System.out.println(ex.getMessage());
+        }
+
         queue = new LinkedList<>();
 
         try {
@@ -198,7 +213,7 @@ public class URLQueue extends UnicastRemoteObject implements URLQueueInterface {
     public static void main(String args[]) {
         try {
             URLQueue urlQueue = new URLQueue();
-            Registry registry = LocateRegistry.createRegistry(8184);
+            Registry registry = LocateRegistry.createRegistry(URL_PORT);
             registry.rebind("URLQueueService", urlQueue);
             System.out.println("URLQueueService ready...");
         } catch (RemoteException e) {

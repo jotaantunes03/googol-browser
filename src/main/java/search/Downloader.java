@@ -1,5 +1,7 @@
 package search;
 
+import java.io.FileInputStream;
+import java.io.InputStream;
 import java.rmi.registry.*;
 import java.rmi.RemoteException;
 import java.text.Normalizer;
@@ -45,10 +47,10 @@ public class Downloader {
     private static URLQueueInterface urlQueueInterface;
 
     /** The multicast group address for distributed communication */
-    private static final String GROUP_ADDRESS = "230.0.0.0";
+    private static String GROUP_ADDRESS = "230.0.0.0";
 
     /** The port number for multicast communication */
-    private static final int PORT = 4446;
+    private static int PORT = 4446;
 
     /** Reliable multicast instance for sending processed data */
     private static ReliableMulticast multicast;
@@ -60,10 +62,13 @@ public class Downloader {
     private static final int RETRY_DELAY_MS = 5000;
 
     /** RMI registry port for URL queue service */
-    private static final int URL_QUEUE_PORT = 8184;
+    private static int URL_QUEUE_PORT = 8184;
 
     /** Flag to track if system is operational */
     private static boolean isOperational = false;
+
+    private static String QUEUE_IP = "localhost";
+
 
     //----------------------------------------CONSTRUCTOR----------------------------------------
 
@@ -76,6 +81,30 @@ public class Downloader {
      * <p>It includes robust reconnection mechanisms for both the URL queue and multicast services.</p>
      */
     public Downloader() {
+        try (InputStream input = new FileInputStream("../config.properties")) {
+            Properties prop = new Properties();
+            prop.load(input);
+            GROUP_ADDRESS = prop.getProperty("MULTICAST_ADDRESS");
+            URL_QUEUE_PORT = Integer.parseInt(prop.getProperty("URL_QUEUE_PORT"));
+            PORT = Integer.parseInt(prop.getProperty("PORT_MULTICAST_COMMUNICATION"));
+            QUEUE_IP = prop.getProperty("QUEUE_IP");
+        } catch (IOException ex) {
+            System.out.println(ex.getMessage());
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         // Initialize connections with retry mechanisms
         initializeMulticast();
         initializeURLQueue();
@@ -134,7 +163,7 @@ public class Downloader {
     private boolean initializeURLQueue() {
         for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
             try {
-                Registry registryQueue = LocateRegistry.getRegistry(URL_QUEUE_PORT);
+                Registry registryQueue = LocateRegistry.getRegistry(QUEUE_IP, URL_QUEUE_PORT);
                 urlQueueInterface = (URLQueueInterface) registryQueue.lookup("URLQueueService");
                 System.out.println("Successfully connected to URL Queue service on attempt " + attempt);
                 return true;
@@ -170,7 +199,7 @@ public class Downloader {
 
         for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
             try {
-                Registry registryQueue = LocateRegistry.getRegistry(URL_QUEUE_PORT);
+                Registry registryQueue = LocateRegistry.getRegistry(QUEUE_IP, URL_QUEUE_PORT);
                 urlQueueInterface = (URLQueueInterface) registryQueue.lookup("URLQueueService");
                 System.out.println("Successfully reconnected to URL Queue service on attempt " + attempt);
                 return true;
@@ -333,7 +362,7 @@ public class Downloader {
         try {
             // Download the web page content using JSoup
             Document doc = Jsoup.connect(url)
-                    .timeout(100000)  // Set a 1000-second timeout
+                    .timeout(1000000)  // Set a 1000-second timeout
                     .userAgent("Mozilla/5.0")  // Use a common user agent
                     .ignoreHttpErrors(true)  // Continue even if HTTP errors occur
                     .get();

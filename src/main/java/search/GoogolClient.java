@@ -1,10 +1,15 @@
 package search;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.util.List;
+import java.util.Properties;
 import java.util.Scanner;
 import java.net.URI;
+import java.util.stream.Stream;
 
 /**
  * The GoogolClient class provides a command-line interface for users to interact
@@ -35,6 +40,12 @@ public class GoogolClient {
     /** Interface for communicating with the Gateway service */
     private static GatewayInterface gateway;
 
+    private static int GATEWAY_PORT = 8185;
+
+    private static String GATEWAY_IP = "localhost";
+
+
+
     //----------------------------------------CONSTRUCTOR----------------------------------------
 
     /**
@@ -43,6 +54,18 @@ public class GoogolClient {
      * <p>Initializes the scanner for reading user input from the command line.</p>
      */
     public GoogolClient() {
+        try (InputStream input = new FileInputStream("../config.properties")) {
+            Properties prop = new Properties();
+            prop.load(input);
+
+            GATEWAY_PORT = Integer.parseInt(prop.getProperty("GATEWAY_PORT"));
+            GATEWAY_IP = prop.getProperty("GatewayIP");
+
+        } catch (IOException ex) {
+            System.out.println(ex.getMessage());
+        }
+
+
         scanner = new Scanner(System.in);
     }
 
@@ -61,7 +84,7 @@ public class GoogolClient {
             GoogolClient client = new GoogolClient();
 
             // Connect to the Gateway service via RMI
-            Registry registry = LocateRegistry.getRegistry(8185);
+            Registry registry = LocateRegistry.getRegistry(GATEWAY_IP, GATEWAY_PORT);
             gateway = (GatewayInterface) registry.lookup("GatewayService");
 
             // Launch the interactive menu

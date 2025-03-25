@@ -1,6 +1,8 @@
 package search;
 
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
@@ -15,6 +17,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import java.util.stream.Collectors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 /**
  * The {@code Gateway} class serves as the central access point for handling distributed 
@@ -41,13 +44,18 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
     private Map<IndexStorageBarrelInterface, BarrelHealth> barrelsHealth;
 
     /** List of port ranges to attempt barrel connections */
-    private static final int[] BARREL_PORTS = {8182, 8183};
+    private static int[] BARREL_PORTS = {8182, 8183};
 
     /** URL Queue service port */
-    private static final int URL_QUEUE_PORT = 8184;
+    private static int URL_QUEUE_PORT = 8184;
 
     /** Gateway service port */
-    private static final int GATEWAY_PORT = 8185;
+    private static int GATEWAY_PORT = 8185;
+
+    private static String QUEUE_IP = "localhost";
+
+    private static String[] BARREL_IP = {"localhost", "localhost"};
+
 
     /** Health check interval in seconds */
     private static final int HEALTH_CHECK_INTERVAL = 30;
@@ -181,6 +189,33 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
      */
     public Gateway() throws RemoteException {
         super();
+
+
+        try (InputStream input = new FileInputStream("../config.properties")) {
+            Properties prop = new Properties();
+            prop.load(input);
+
+            // Ler e converter as portas para int[]
+            String ports = prop.getProperty("BARREL_PORTS");
+            if (ports != null && !ports.isEmpty()) BARREL_PORTS = Stream.of(ports.split(",")).mapToInt(Integer::parseInt).toArray();
+            else System.out.println("Nenhuma porta especificada.");
+
+            URL_QUEUE_PORT = Integer.parseInt(prop.getProperty("URL_QUEUE_PORT"));
+            GATEWAY_PORT = Integer.parseInt(prop.getProperty("GATEWAY_PORT"));
+            QUEUE_IP = prop.getProperty("QUEUE_IP");
+
+            // Ler e converter os IPs para String[]
+            String ips = prop.getProperty("BARREL_IP");
+            if (ips != null && !ips.isEmpty()) BARREL_IP = ips.split(",");
+
+
+
+        } catch (IOException ex) {
+            System.out.println(ex.getMessage());
+        }
+
+
+
         barrelsHealth = new ConcurrentHashMap<>();
         searchCache = new ConcurrentHashMap<>();
         searchFrequency = new ConcurrentHashMap<>();
@@ -220,9 +255,14 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
 
         try {
             // Connect to storage barrels on specified ports
-            for (int port : BARREL_PORTS) {
+            for (int i = 0; i < BARREL_PORTS.length && i < BARREL_IP.length; i++) {
+
+                int port = BARREL_PORTS[i];
+                String barrel_ip = BARREL_IP[i];
+
+
                 try {
-                    Registry registry = LocateRegistry.getRegistry(port);
+                    Registry registry = LocateRegistry.getRegistry(barrel_ip, port);
                     IndexStorageBarrelInterface barrel = (IndexStorageBarrelInterface) registry.lookup("index");
 
                     // Verify barrel connectivity with a test method call
@@ -255,7 +295,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
 
             // Connect to the URL queue service
             try {
-                Registry registryQueue = LocateRegistry.getRegistry(URL_QUEUE_PORT);
+                Registry registryQueue = LocateRegistry.getRegistry(QUEUE_IP, URL_QUEUE_PORT);
                 urlQueue = (URLQueueInterface) registryQueue.lookup("URLQueueService");
                 logInfo("Successfully connected to URL Queue Service");
             } catch (Exception e) {
@@ -429,7 +469,7 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
         // Ensure URL queue is connected
         if (urlQueue == null) {
             try {
-                Registry registryQueue = LocateRegistry.getRegistry(URL_QUEUE_PORT);
+                Registry registryQueue = LocateRegistry.getRegistry(QUEUE_IP, URL_QUEUE_PORT);
                 urlQueue = (URLQueueInterface) registryQueue.lookup("URLQueueService");
             } catch (Exception e) {
                 logError(String.format("Definitive failure reconnecting to URL Queue: %s", e.getMessage()));
