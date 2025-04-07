@@ -36,7 +36,6 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     //----------------------------------------ATTRIBUTES----------------------------------------
 
     /** Interface for communication with the URLQueue via RMI */
-    private static URLQueueInterface urlQueueInterface;
 
     /** Connection to the SQLite database */
     private Connection connection;
@@ -654,15 +653,6 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             registry.rebind(serviceName, server);
             System.out.println("IndexStorageBarrel " + barrelId + " registrado com o nome '" + serviceName + "' na porta: " + port);
 
-            // Connect to the URLQueue server
-            try {
-                Registry registryQueue = LocateRegistry.getRegistry(QUEUE_IP, URL_QUEUE_PORT);
-                urlQueueInterface = (URLQueueInterface) registryQueue.lookup("URLQueueService");
-                System.out.println("Barrel " + barrelId + " conectado à URLQueue.");
-            } catch (Exception e) {
-                System.err.println("Barrel " + barrelId + " não conseguiu conectar à URLQueue: " + e.getMessage());
-                System.err.println("Certifique-se de que a URLQueue está em execução na porta 8184");
-            }
 
             // Start multicast listener thread
             System.out.println("Barrel " + barrelId + " iniciando thread de escuta multicast...");

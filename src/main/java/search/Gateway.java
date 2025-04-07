@@ -210,6 +210,10 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
 
 
 
+
+
+
+
         } catch (IOException ex) {
             System.out.println(ex.getMessage());
         }
