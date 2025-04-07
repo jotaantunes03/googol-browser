@@ -36,6 +36,7 @@ public class URLQueue extends UnicastRemoteObject implements URLQueueInterface {
 
     /** In-memory queue for high-performance URL operations */
     private Queue<String> queue;
+    private Queue<String> allUrlsProcessed;
     private static int URL_PORT = 8184;
 
     //----------------------------------------CONSTRUCTOR----------------------------------------
@@ -97,8 +98,11 @@ public class URLQueue extends UnicastRemoteObject implements URLQueueInterface {
      */
     @Override
     public synchronized void addUrl(String url) throws RemoteException {
+
         if (!queue.contains(url)) {  // Avoid duplicate URLs
+            if (allUrlsProcessed.contains(url)) return;
             queue.add(url);
+            allUrlsProcessed.add(url);
             try (PreparedStatement stmt = connection.prepareStatement("INSERT OR IGNORE INTO urls (url) VALUES (?)")) {
                 stmt.setString(1, url);
                 stmt.executeUpdate();
