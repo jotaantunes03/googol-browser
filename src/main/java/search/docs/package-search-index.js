@@ -1,1 +1,0 @@
-packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html"},{"l":"search"},{"l":"search.Sockets"}];updateSearchResults();

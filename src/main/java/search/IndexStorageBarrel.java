@@ -36,7 +36,6 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
     //----------------------------------------ATTRIBUTES----------------------------------------
 
     /** Interface for communication with the URLQueue via RMI */
-    private static URLQueueInterface urlQueueInterface;
 
     /** Connection to the SQLite database */
     private Connection connection;
@@ -325,10 +324,11 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
         // Process each word in the query
         for (String word : wordArray) {
+            String normalizedWord = normalizeWord(word); // Normalize the word
             Set<String> urlSet = new HashSet<>();
             try (PreparedStatement stmt = connection.prepareStatement(
                     "SELECT urls FROM index_data WHERE word = ?")) {
-                stmt.setString(1, word);
+                stmt.setString(1, normalizedWord); // Use normalized word in the query
                 ResultSet rs = stmt.executeQuery();
                 // Loop through all rows for the given word
                 while (rs.next()) {
@@ -368,7 +368,24 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         return sortUrlsByLinkedCount(commonUrlsList);
     }
 
+    // Helper method to normalize a single word
+    private String normalizeWord(String word) {
+        if (word == null) return "";
 
+        // Convert to lowercase
+        String normalized = word.toLowerCase();
+
+        // Normalize accents using NFD (Normalization Form Decomposed)
+        normalized = java.text.Normalizer.normalize(normalized, java.text.Normalizer.Form.NFD);
+
+        // Remove diacritical marks (accents)
+        normalized = normalized.replaceAll("\\p{M}", "");
+
+        // Remove special characters, keeping only letters and numbers
+        normalized = normalized.replaceAll("[^a-z0-9]", "");
+
+        return normalized;
+    }
     /**
      * Sorts a list of URLs based on the number of inbound links they have.
      * The method queries the database to count how many times each URL appears 
@@ -654,15 +671,6 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
             registry.rebind(serviceName, server);
             System.out.println("IndexStorageBarrel " + barrelId + " registrado com o nome '" + serviceName + "' na porta: " + port);
 
-            // Connect to the URLQueue server
-            try {
-                Registry registryQueue = LocateRegistry.getRegistry(QUEUE_IP, URL_QUEUE_PORT);
-                urlQueueInterface = (URLQueueInterface) registryQueue.lookup("URLQueueService");
-                System.out.println("Barrel " + barrelId + " conectado à URLQueue.");
-            } catch (Exception e) {
-                System.err.println("Barrel " + barrelId + " não conseguiu conectar à URLQueue: " + e.getMessage());
-                System.err.println("Certifique-se de que a URLQueue está em execução na porta 8184");
-            }
 
             // Start multicast listener thread
             System.out.println("Barrel " + barrelId + " iniciando thread de escuta multicast...");
