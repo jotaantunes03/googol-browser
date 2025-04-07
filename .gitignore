@@ -1,3 +1,16 @@
-urlqueue.db
+# Ignore database files
 *.db
+
+# Ignore specific directories
 .idea/
+.devcontainer/
+testes para o projeto de SD/
+enunciado do projeto/
+Index_BD/
+
+# Ignore specific files
+notas.txt
+RelatorioSD.pdf
+
+# Ignore a specific database file (already covered by *.db, but left here for clarity)
+urlqueue.db

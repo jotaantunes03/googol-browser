@@ -324,10 +324,11 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
 
         // Process each word in the query
         for (String word : wordArray) {
+            String normalizedWord = normalizeWord(word); // Normalize the word
             Set<String> urlSet = new HashSet<>();
             try (PreparedStatement stmt = connection.prepareStatement(
                     "SELECT urls FROM index_data WHERE word = ?")) {
-                stmt.setString(1, word);
+                stmt.setString(1, normalizedWord); // Use normalized word in the query
                 ResultSet rs = stmt.executeQuery();
                 // Loop through all rows for the given word
                 while (rs.next()) {
@@ -367,7 +368,24 @@ public class IndexStorageBarrel extends UnicastRemoteObject implements IndexStor
         return sortUrlsByLinkedCount(commonUrlsList);
     }
 
+    // Helper method to normalize a single word
+    private String normalizeWord(String word) {
+        if (word == null) return "";
 
+        // Convert to lowercase
+        String normalized = word.toLowerCase();
+
+        // Normalize accents using NFD (Normalization Form Decomposed)
+        normalized = java.text.Normalizer.normalize(normalized, java.text.Normalizer.Form.NFD);
+
+        // Remove diacritical marks (accents)
+        normalized = normalized.replaceAll("\\p{M}", "");
+
+        // Remove special characters, keeping only letters and numbers
+        normalized = normalized.replaceAll("[^a-z0-9]", "");
+
+        return normalized;
+    }
     /**
      * Sorts a list of URLs based on the number of inbound links they have.
      * The method queries the database to count how many times each URL appears 

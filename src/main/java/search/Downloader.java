@@ -356,9 +356,12 @@ public class Downloader {
             System.err.println("Attempted to process null or empty URL");
             return false;
         }
-
-        System.out.println("Processing URL: " + url);
-
+    
+        try {
+            urlQueueInterface.addUrl(url);
+        } catch (RemoteException re) {
+            System.err.println("Failed to add URL to queue even after reconnection: " + url);
+        } 
         try {
             // Download the web page content using JSoup
             Document doc = Jsoup.connect(url)
@@ -570,15 +573,11 @@ public class Downloader {
 
             // Process the URLs in parallel if any were retrieved
             if (!urlBatch.isEmpty()) {
-                System.out.println("Processing batch of " + urlBatch.size() + " URLs...");
-
                 // Count successfully processed URLs
                 processedCount = (int) urlBatch.parallelStream()
                         .map(Downloader::processUrl)
                         .filter(Boolean::booleanValue)
                         .count();
-
-                System.out.println("Successfully processed " + processedCount + " out of " + urlBatch.size() + " URLs");
             } else {
                 System.out.println("No URLs retrieved from queue");
             }

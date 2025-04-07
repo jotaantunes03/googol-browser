@@ -66,9 +66,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
     /** Interface for accessing the URL queue */
     private URLQueueInterface urlQueue;
 
-    /** Cache for storing recent search results to improve response time */
-    private Map<String, List<String>> searchCache;
-
     /** Map for tracking frequency of each search term */
     private Map<String, AtomicInteger> searchFrequency;
 
@@ -221,7 +218,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
 
 
         barrelsHealth = new ConcurrentHashMap<>();
-        searchCache = new ConcurrentHashMap<>();
         searchFrequency = new ConcurrentHashMap<>();
         barrelMetrics = new ConcurrentHashMap<>();
 
@@ -385,12 +381,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
         // Update search frequency
         searchFrequency.computeIfAbsent(word, k -> new AtomicInteger(0)).incrementAndGet();
 
-        // Check cache first
-        if (searchCache.containsKey(word)) {
-            logInfo(String.format("Cache hit for word: %s", word));
-            return searchCache.get(word);
-        }
-
         // Ensure we have barrels
         if (barrelsHealth.isEmpty()) {
             connectToServices();
@@ -424,10 +414,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
                         return "URL" + url + "\n" + title + "\n";
                     })
                     .collect(Collectors.toList());
-
-            // Cache results
-            searchCache.put(word, results);
-
 
             return results;
         } catch (RemoteException e) {
@@ -500,8 +486,6 @@ public class Gateway extends UnicastRemoteObject implements GatewayInterface, Au
      * @throws RemoteException If a remote communication error occurs.
      */
     public List<String> checkInboundLinks(String pageUrl) throws RemoteException {
-        // Check cache first (if you have caching enabled for inbound links)
-
         // Ensure we have healthy storage barrels available
         if (barrelsHealth.isEmpty()) {
             connectToServices();
